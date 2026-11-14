@@ -1,0 +1,35 @@
+:root {
+  --low: #1e8e3e;
+  --medium: #b06000;
+  --high: #c5221f;
+}
+
+body { background: #f4f6f8; }
+
+.density-low    { background: var(--low); color: #fff; }
+.density-medium { background: var(--medium); color: #fff; }
+.density-high   { background: var(--high); color: #fff; }
+
+.text-density-low    { color: var(--low); }
+.text-density-medium { color: var(--medium); }
+.text-density-high   { color: var(--high); }
+
+.result-card .display-5 { line-height: 1.1; }
+.result-card.flash { animation: flash .6s ease; }
+@keyframes flash { from { background: #e7f1ff; } to { background: #fff; } }
+
+#rules-table tr.active-rule td { background: #fff3cd; font-weight: 600; }
+
+.chart-box { position: relative; height: 260px; }
+
+/* Small illustrative signal head */
+.signal {
+  display: flex; flex-direction: column; gap: 6px;
+  background: #222; padding: 8px; border-radius: 10px;
+}
+.lamp { width: 22px; height: 22px; border-radius: 50%; background: #444; transition: background .3s; }
+.lamp.red.on   { background: #e53935; box-shadow: 0 0 8px #e53935; }
+.lamp.amber.on { background: #fbc02d; box-shadow: 0 0 8px #fbc02d; }
+.lamp.green.on { background: #43a047; box-shadow: 0 0 8px #43a047; }
+
+details summary { cursor: pointer; color: #0d6efd; }
