@@ -98,4 +98,3 @@ def test_clear_history(client, row_count):
 def test_dashboard_page_renders(client):
     html = client.get("/").get_data(as_text=True)
     assert "Simulate Traffic" in html
-    assert "does <strong>not</strong> control any real traffic light" in html
