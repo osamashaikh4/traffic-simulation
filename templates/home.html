@@ -6,7 +6,23 @@
 {% block content %}
   <!-- Run a simulation (UC1) -->
   <section class="panel" aria-labelledby="run-heading">
-    <div class="panel-head"><h2 id="run-heading">Run simulation</h2></div>
+    <div class="panel-head"><h2 id="run-heading">Run simulation</h2>
+      <div class="head-controls">
+        <label class="inline-field" for="speed">Speed
+          <select id="speed" class="select">
+            <option value="1">1×</option>
+            <option value="2" selected>2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+            <option value="0">Skip animation</option>
+          </select>
+        </label>
+        <button id="auto-btn" class="btn" type="button" aria-pressed="false">
+          <span class="auto-off">{{ icon('repeat', 16) }} Auto simulate</span>
+          <span class="auto-on">{{ icon('stop', 14) }} Stop auto <span class="auto-count num" id="auto-count"></span></span>
+        </button>
+      </div>
+    </div>
     <div class="panel-body">
       <div class="run-row">
         <div class="field field-grow">
@@ -57,6 +73,23 @@
     <div class="panel-foot"><span id="result-explanation" class="explain">Press <strong>Simulate traffic</strong> to generate a sample vehicle count.</span></div>
   </section>
 
+  <!-- Junction view -->
+  <section class="panel" aria-labelledby="junction-heading">
+    <div class="panel-head"><h2 id="junction-heading">Junction view</h2>
+      <span class="sub">Simulated approach from the west · traffic drives on the left</span></div>
+    <div class="hud" aria-live="polite">
+      <div class="hud-cell"><div class="metric-label">Signal</div>
+        <div class="hud-value"><span class="phase-dot" id="hud-phase-dot" data-signal="red" aria-hidden="true"></span><span id="hud-phase">Waiting for a simulation</span></div></div>
+      <div class="hud-cell"><div class="metric-label">Time left</div><div class="hud-value num" id="hud-countdown">–</div></div>
+      <div class="hud-cell"><div class="metric-label">Waiting</div><div class="hud-value num" id="hud-waiting">0</div></div>
+      <div class="hud-cell"><div class="metric-label">Got through</div><div class="hud-value num" id="hud-cleared">–</div></div>
+    </div>
+    <div class="junction-wrap">
+      <canvas id="junction" role="img" aria-label="Animated top-down view of the junction: the simulated queue waits on the west approach and drives through during the recommended green time"></canvas>
+    </div>
+    <div class="panel-foot">Illustrative animation: assumes roughly one vehicle every 2 seconds per lane once moving. Other roads carry background traffic.</div>
+  </section>
+
   <!-- Recent runs chart -->
   <section class="panel" aria-labelledby="chart-heading">
     <div class="panel-head"><h2 id="chart-heading">Last {{ chart_runs }} runs</h2>
@@ -73,8 +106,9 @@
   <div class="grid-2">
     <!-- Rules (section 4.5) -->
     <section class="panel" aria-labelledby="rules-heading">
-      <div class="panel-head"><h2 id="rules-heading">Rules</h2></div>
-      <div class="table-wrap">
+      <div class="panel-head"><h2 id="rules-heading">Rules</h2>
+        <button class="btn btn-ghost rules-edit-btn" type="button" id="rules-edit-btn">{{ icon('edit', 15) }} Edit</button></div>
+      <div class="table-wrap" id="rules-view">
         <table class="table" id="rules-table">
           <thead><tr><th>Vehicle count</th><th>Density</th><th>Green time</th></tr></thead>
           <tbody>
@@ -88,6 +122,34 @@
           </tbody>
         </table>
       </div>
+      <form id="rules-form" class="rules-form" hidden novalidate>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green time (s)</th></tr></thead>
+            <tbody>
+              <tr><td>{{ status('Low') }}</td><td class="num">{{ min_count }}</td>
+                <td><input class="input num" name="low_max" id="rule-low-max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
+                <td><input class="input num" name="low_green" inputmode="numeric" value="{{ rule_config.low_green }}" aria-label="Low green time in seconds"></td></tr>
+              <tr><td>{{ status('Medium') }}</td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
+                <td><input class="input num" name="medium_max" id="rule-medium-max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
+                <td><input class="input num" name="medium_green" inputmode="numeric" value="{{ rule_config.medium_green }}" aria-label="Medium green time in seconds"></td></tr>
+              <tr><td>{{ status('High') }}</td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
+                <td class="num">{{ max_count }}</td>
+                <td><input class="input num" name="high_green" inputmode="numeric" value="{{ rule_config.high_green }}" aria-label="High green time in seconds"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="rules-form-foot">
+          <div id="rules-error" class="field-error" role="alert"></div>
+          <div class="rules-actions">
+            <button class="btn btn-ghost" type="button" id="rules-reset">Reset to defaults</button>
+            <span class="spacer"></span>
+            <button class="btn" type="button" id="rules-cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Save rules</button>
+          </div>
+          <p class="hint-text">Green time: {{ green_min }}–{{ green_max }} seconds. New rules apply to the next simulation; saved results keep the values they were given.</p>
+        </div>
+      </form>
     </section>
 
     <!-- Recent results -->
@@ -115,5 +177,6 @@
   </script>
   <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
   <script src="{{ url_for('static', filename='common.js') }}"></script>
+  <script src="{{ url_for('static', filename='junction.js') }}"></script>
   <script src="{{ url_for('static', filename='home.js') }}"></script>
 {% endblock %}

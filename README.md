@@ -8,7 +8,7 @@ shows a history table and charts.
 > This is an academic simulation. It does not use cameras, sensors or GPS and
 > it does **not** control any real traffic light.
 
-## Rules (`rules.py`)
+## Rules (`rules.py`, editable on Home)
 
 | Vehicle count | Density | Recommended green time |
 |---|---|---|
@@ -16,8 +16,12 @@ shows a history table and charts.
 | 11–25 | Medium | 30 seconds |
 | 26–50 | High   | 45 seconds |
 
-All thresholds and durations are kept in `rules.py` so they can be changed in
-one place (NFR4). The values are illustrative, not engineering standards.
+These are the defaults (in `rules.py`). They can be changed from the **Edit**
+button on the Home page's Rules panel; the active rules are stored in the
+`rule_config` table and apply to the next simulation (saved results keep the
+values they were given). Limits: bands stay contiguous over 0–50 with at least
+one count each, green times 5–120 s. **Reset to defaults** restores the table
+above. The values are illustrative, not engineering standards.
 
 ## Requirements
 
@@ -36,7 +40,7 @@ pip install -r requirements.txt
 # Database connection (defaults shown - change if your MySQL has a password)
 export MYSQL_HOST=localhost MYSQL_PORT=3306 MYSQL_USER=root MYSQL_PASSWORD= MYSQL_DATABASE=smart_traffic
 
-flask --app app init-db      # creates the database and the traffic_records table
+flask --app app init-db      # creates or updates the database tables (safe to re-run)
 flask --app app run --port 8000   # open http://127.0.0.1:8000
 ```
 
@@ -56,7 +60,15 @@ from `static/vendor/`, so it works offline.
 3. Flask validates the value, applies the rules, saves the record and returns it.
 4. The three result figures show count, density and green time, with a sentence
    explaining which rule was applied. The matching rule row is highlighted.
-5. **Recent results** shows the latest 3 saved runs.
+5. **Junction view** animates the result: a top-down four-way junction
+   (left-hand traffic, as in Bangladesh) where the simulated count queues on
+   the west approach, gets the recommended green time, and drives through.
+   The strip above it shows the signal, time left, vehicles waiting and
+   vehicles that got through. Other roads carry background traffic.
+6. **Speed** sets the animation speed (1×–8×); *Skip animation* shows results
+   instantly. **Auto simulate** keeps running random simulations one after
+   another until stopped.
+7. **Last 20 runs** chart and **Recent results** (latest 3) update after each run.
 
 **Reports** - every saved run, newest first, with Low / Medium / High
 filters, 20 rows per page by default (10, 20, 50 or 100 selectable),
@@ -80,9 +92,10 @@ app.py           Flask app: pages, JSON API, init-db command
 rules.py         Density and green-time rules (single source of truth)
 validation.py    Input validation for vehicle counts and scenario labels
 db.py            MySQL access (PyMySQL)
-schema.sql       traffic_records table
+schema.sql       traffic_records and rule_config tables
 templates/       base.html (sidebar layout), home, reports, analytics, _icons.html
-static/          style.css, page JavaScript, vendor/ (Inter font, Chart.js 4)
+static/          style.css, page JavaScript, junction.js (junction animation),
+                 vendor/ (Inter font, Chart.js 4)
 tests/           Automated tests for report chapter 5
 ```
 
@@ -98,6 +111,9 @@ tests/           Automated tests for report chapter 5
 | GET    | `/api/simulations?limit=3` | Latest records (newest first, default 50) and totals per density |
 | GET    | `/api/analytics` | Summary figures, density totals, latest 50 runs and count distribution |
 | DELETE | `/api/simulations` | Clear all records |
+| GET    | `/api/rules` | Active rule settings and bands |
+| PUT    | `/api/rules` | Body `{"low_max": 10, "medium_max": 25, "low_green": 15, "medium_green": 30, "high_green": 45}` → saves, or 400 with `error` |
+| DELETE | `/api/rules` | Reset rules to the defaults |
 
 ## Tests
 

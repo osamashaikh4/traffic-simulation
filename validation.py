@@ -1,8 +1,8 @@
-"""Input validation for vehicle counts and scenario labels (FR9, TC10-TC13)."""
+"""Input validation for vehicle counts, scenario labels and rule settings."""
 
 import re
 
-from rules import MAX_COUNT, MIN_COUNT
+from rules import GREEN_MAX, GREEN_MIN, MAX_COUNT, MIN_COUNT
 
 SCENARIO_LABEL_MAX = 50
 WHOLE_NUMBER = re.compile(r"[+-]?\d+")
@@ -12,35 +12,32 @@ class ValidationError(ValueError):
     pass
 
 
-def parse_vehicle_count(raw):
-    """Turn a JSON/form value into a valid whole-number vehicle count.
-
-    Documented rule for decimals (TC13): decimals are rejected, not rounded.
-    """
+def _whole_number(raw, label, blank_message):
+    """Parse an int from JSON/form input. Decimals are rejected, not rounded."""
     if raw is None or (isinstance(raw, str) and raw.strip() == ""):
-        raise ValidationError("Please enter a vehicle count.")
+        raise ValidationError(blank_message)
     if isinstance(raw, bool):
-        raise ValidationError("Vehicle count must be a whole number.")
-
+        raise ValidationError(f"{label} must be a whole number.")
     if isinstance(raw, int):
-        value = raw
-    elif isinstance(raw, float):
+        return raw
+    if isinstance(raw, float):
         if not raw.is_integer():
-            raise ValidationError("Vehicle count must be a whole number (decimals are not allowed).")
-        value = int(raw)
-    elif isinstance(raw, str):
+            raise ValidationError(f"{label} must be a whole number (decimals are not allowed).")
+        return int(raw)
+    if isinstance(raw, str):
         text = raw.strip()
         if WHOLE_NUMBER.fullmatch(text):
-            value = int(text)
-        else:
-            try:
-                float(text)
-            except ValueError:
-                raise ValidationError("Vehicle count must be a number.")
-            raise ValidationError("Vehicle count must be a whole number (decimals are not allowed).")
-    else:
-        raise ValidationError("Vehicle count must be a number.")
+            return int(text)
+        try:
+            float(text)
+        except ValueError:
+            raise ValidationError(f"{label} must be a number.")
+        raise ValidationError(f"{label} must be a whole number (decimals are not allowed).")
+    raise ValidationError(f"{label} must be a number.")
 
+
+def parse_vehicle_count(raw):
+    value = _whole_number(raw, "Vehicle count", "Please enter a vehicle count.")
     if value < MIN_COUNT or value > MAX_COUNT:
         raise ValidationError(f"Vehicle count must be between {MIN_COUNT} and {MAX_COUNT}.")
     return value
@@ -57,3 +54,24 @@ def parse_scenario_label(raw):
     if len(label) > SCENARIO_LABEL_MAX:
         raise ValidationError(f"Scenario label must be {SCENARIO_LABEL_MAX} characters or fewer.")
     return label
+
+
+def _ranged(data, key, label, low, high):
+    value = _whole_number(data.get(key), label, f"Please enter the {label.lower()}.")
+    if value < low or value > high:
+        raise ValidationError(f"{label} must be between {low} and {high}.")
+    return value
+
+
+def parse_rule_config(data):
+    """Validate rule settings. Bands must stay contiguous and cover 0..MAX_COUNT,
+    with at least one count in each band."""
+    if not isinstance(data, dict):
+        raise ValidationError("Request body must be JSON.")
+    low_max = _ranged(data, "low_max", "Low upper limit", MIN_COUNT, MAX_COUNT - 2)
+    medium_max = _ranged(data, "medium_max", "Medium upper limit", low_max + 1, MAX_COUNT - 1)
+    greens = {
+        key: _ranged(data, key, f"{level} green time", GREEN_MIN, GREEN_MAX)
+        for key, level in (("low_green", "Low"), ("medium_green", "Medium"), ("high_green", "High"))
+    }
+    return {"low_max": low_max, "medium_max": medium_max, **greens}

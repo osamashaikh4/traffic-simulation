@@ -1,10 +1,12 @@
-"""MySQL access for traffic_records."""
+"""MySQL access for traffic_records and rule_config."""
 
 import os
 from pathlib import Path
 
 import pymysql
 from flask import current_app, g
+
+from rules import DEFAULT_CONFIG, build_rules
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -46,10 +48,64 @@ def init_db(config):
         with conn.cursor() as cur:
             cur.execute(f"CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4")
             cur.execute(f"USE `{name}`")
-            cur.execute(SCHEMA_PATH.read_text())
+            for statement in SCHEMA_PATH.read_text().split(";"):
+                if statement.strip():
+                    cur.execute(statement)
+            _migrate(cur, name)
     finally:
         conn.close()
 
+
+def _migrate(cur, name):
+    """Upgrade databases created before green times became configurable:
+    the old CHECK only allowed 15, 30 or 45 seconds."""
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM information_schema.TABLE_CONSTRAINTS "
+        "WHERE CONSTRAINT_SCHEMA = %s AND TABLE_NAME = 'traffic_records' "
+        "AND CONSTRAINT_NAME = 'chk_green_time'",
+        (name,),
+    )
+    if cur.fetchone()["n"]:
+        cur.execute(
+            "ALTER TABLE traffic_records DROP CHECK chk_green_time, "
+            "ADD CONSTRAINT chk_green_time_range CHECK (green_time_seconds BETWEEN 5 AND 120)"
+        )
+
+
+# --- Rule settings ----------------------------------------------------------
+
+RULE_FIELDS = ("low_max", "medium_max", "low_green", "medium_green", "high_green")
+
+
+def get_rule_config():
+    """The saved rule settings, or the defaults when none have been saved."""
+    with get_db().cursor() as cur:
+        cur.execute(f"SELECT {', '.join(RULE_FIELDS)} FROM rule_config WHERE id = 1")
+        row = cur.fetchone()
+    return dict(row) if row else dict(DEFAULT_CONFIG)
+
+
+def get_rules():
+    return build_rules(get_rule_config())
+
+
+def save_rule_config(config):
+    values = [config[f] for f in RULE_FIELDS]
+    updates = ", ".join(f"{f} = new.{f}" for f in RULE_FIELDS)
+    with get_db().cursor() as cur:
+        cur.execute(
+            f"INSERT INTO rule_config (id, {', '.join(RULE_FIELDS)}) VALUES (1, %s, %s, %s, %s, %s) "
+            f"AS new ON DUPLICATE KEY UPDATE {updates}",
+            values,
+        )
+
+
+def reset_rule_config():
+    with get_db().cursor() as cur:
+        cur.execute("DELETE FROM rule_config")
+
+
+# --- Traffic records ----------------------------------------------------------
 
 def insert_record(scenario_label, vehicle_count, density_level, green_time_seconds):
     with get_db().cursor() as cur:

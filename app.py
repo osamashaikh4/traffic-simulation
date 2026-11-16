@@ -19,8 +19,9 @@ import pymysql
 from flask import Flask, Response, abort, jsonify, render_template, request
 
 import db
-from rules import MAX_COUNT, MIN_COUNT, classify, rules_as_dicts
-from validation import ValidationError, parse_scenario_label, parse_vehicle_count
+from rules import GREEN_MAX, GREEN_MIN, MAX_COUNT, MIN_COUNT, classify, rules_as_dicts
+from validation import (ValidationError, parse_rule_config, parse_scenario_label,
+                        parse_vehicle_count)
 
 DENSITY_LEVELS = ("Low", "Medium", "High")
 RECENT_LIMIT = 3          # results shown on the home page
@@ -88,7 +89,8 @@ def create_app(config=None):
     @app.get("/")
     def home():
         return render_template(
-            "home.html", rules=rules_as_dicts(), min_count=MIN_COUNT, max_count=MAX_COUNT,
+            "home.html", rules=rules_as_dicts(db.get_rules()), rule_config=db.get_rule_config(),
+            min_count=MIN_COUNT, max_count=MAX_COUNT, green_min=GREEN_MIN, green_max=GREEN_MAX,
             recent_limit=RECENT_LIMIT, chart_runs=HOME_CHART_RUNS,
         )
 
@@ -136,7 +138,7 @@ def create_app(config=None):
     @app.get("/analytics")
     def analytics():
         require_analytics()
-        return render_template("analytics.html", rules=rules_as_dicts(),
+        return render_template("analytics.html", rules=rules_as_dicts(db.get_rules()),
                                analytics_runs=ANALYTICS_RUNS)
 
     # --- API -----------------------------------------------------------------
@@ -152,7 +154,7 @@ def create_app(config=None):
         except ValidationError as exc:
             return jsonify(error=str(exc)), 400
 
-        density_level, green_time = classify(vehicle_count)
+        density_level, green_time = classify(vehicle_count, db.get_rules())
         record = db.insert_record(scenario_label, vehicle_count, density_level, green_time)
         return jsonify(record=serialize(record)), 201
 
@@ -170,13 +172,14 @@ def create_app(config=None):
     @app.get("/api/analytics")
     def analytics_data():
         require_analytics()
+        rules = db.get_rules()
         stats = db.summary()
         frequencies = db.count_frequencies()
         recent = [serialize(r) for r in reversed(db.list_records(ANALYTICS_RUNS))]
         distribution = [
             {
                 "label": f"{low}–{high}",
-                "density": classify(high)[0],
+                "density": classify(high, rules)[0],
                 "runs": sum(frequencies.get(n, 0) for n in range(low, high + 1)),
             }
             for low, high in DISTRIBUTION_BUCKETS
@@ -193,6 +196,28 @@ def create_app(config=None):
             recent=recent,
             distribution=distribution,
         )
+
+    def rules_payload():
+        config = db.get_rule_config()
+        return {"config": config, "rules": rules_as_dicts(db.get_rules())}
+
+    @app.get("/api/rules")
+    def get_rules():
+        return jsonify(rules_payload())
+
+    @app.put("/api/rules")
+    def update_rules():
+        try:
+            config = parse_rule_config(request.get_json(silent=True))
+        except ValidationError as exc:
+            return jsonify(error=str(exc)), 400
+        db.save_rule_config(config)
+        return jsonify(rules_payload())
+
+    @app.delete("/api/rules")
+    def reset_rules():
+        db.reset_rule_config()
+        return jsonify(rules_payload())
 
     @app.cli.command("init-db")
     def init_db_command():

@@ -25,6 +25,7 @@ def app():
     application = create_app(config)
     with application.app_context():
         db.delete_all_records()
+        db.reset_rule_config()
         db.close_db()
     yield application
 

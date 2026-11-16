@@ -330,3 +330,43 @@ kbd {
 @media (max-width: 760px) { .panel-head .meta { display: none; } }
 .chart-box.tall { height: 340px; }
 .panel-head .sub { color: var(--text-3); font-size: 14px; margin-left: auto; }
+
+/* ---- Home: auto mode, speed ------------------------------------------------------ */
+.head-controls { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inline-field { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 14px; font-weight: 500; }
+.inline-field .select { height: 36px; }
+#auto-btn .auto-on { display: none; }
+#auto-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+#auto-btn[aria-pressed="true"] .icon { color: var(--accent); }
+#auto-btn[aria-pressed="true"] .auto-on { display: inline-flex; align-items: center; gap: 6px; }
+#auto-btn[aria-pressed="true"] .auto-off { display: none; }
+#auto-btn > span { display: inline-flex; align-items: center; gap: 6px; }
+.auto-count:not(:empty)::before { content: "· "; }
+
+/* ---- Home: junction view ------------------------------------------------------------ */
+.hud { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; border-bottom: 1px solid var(--border); }
+.hud-cell { padding: 14px 20px; min-width: 0; }
+.hud-cell + .hud-cell { border-left: 1px solid var(--border); }
+.hud-value { font-size: 20px; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phase-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: #ff3b30; box-shadow: 0 0 0 4px rgba(255, 59, 48, .15); }
+.phase-dot[data-signal="green"] { background: #28c840; box-shadow: 0 0 0 4px rgba(40, 200, 64, .18); }
+.phase-dot[data-signal="amber"] { background: #febc2e; box-shadow: 0 0 0 4px rgba(254, 188, 46, .2); }
+.junction-wrap { background: #d8dccd; }
+#junction { display: block; width: 100%; height: auto; aspect-ratio: 1100 / 560; }
+@media (max-width: 760px) {
+  .hud { grid-template-columns: 1fr 1fr; }
+  .hud-cell:nth-child(3) { border-left: 0; }
+  .hud-cell:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .head-controls { margin-left: 0; width: 100%; }
+}
+
+/* ---- Home: rules editor -------------------------------------------------------------- */
+.rules-edit-btn { margin-left: auto; height: 32px; padding: 0 10px; }
+.rules-form .input { width: 96px; height: 36px; }
+.rules-form .table td { height: 58px; }
+.rules-form-foot { padding: 14px 20px 18px; border-top: 1px solid var(--border); }
+.rules-form-foot .field-error:not(:empty) { margin: 0 0 12px; }
+.rules-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rules-actions .spacer { flex: 1; }
+.hint-text { margin: 12px 0 0; color: var(--text-3); font-size: 13.5px; }
+.saved-flash { animation: flash 1.2s ease; }
