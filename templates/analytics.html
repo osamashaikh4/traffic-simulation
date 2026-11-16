@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block heading %}Analytics{% endblock %}
+{% block subheading %}Charts built from the saved simulation records. The full data is on the <a href="{{ url_for('reports') }}">Reports</a> page.{% endblock %}
+
+{% block content %}
+  <div id="request-error" class="alert alert-danger d-none" role="alert"></div>
+
+  <div id="empty-state" class="card d-none">
+    <div class="card-body text-center py-5 text-muted">
+      No simulations saved yet. Run some from the <a href="{{ url_for('home') }}">Home</a> page and they will appear here.
+    </div>
+  </div>
+
+  <div id="analytics" class="d-none">
+    <!-- KPI tiles -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-lg-3"><div class="card h-100 stat"><div class="card-body">
+        <div class="stat-label">Total runs</div><div class="stat-value" id="kpi-runs">–</div>
+        <div class="stat-note">saved simulations</div>
+      </div></div></div>
+      <div class="col-6 col-lg-3"><div class="card h-100 stat"><div class="card-body">
+        <div class="stat-label">Average vehicle count</div><div class="stat-value" id="kpi-avg">–</div>
+        <div class="stat-note">vehicles per run</div>
+      </div></div></div>
+      <div class="col-6 col-lg-3"><div class="card h-100 stat"><div class="card-body">
+        <div class="stat-label">Average green time</div><div class="stat-value" id="kpi-green">–</div>
+        <div class="stat-note">seconds recommended</div>
+      </div></div></div>
+      <div class="col-6 col-lg-3"><div class="card h-100 stat"><div class="card-body">
+        <div class="stat-label">Count range</div><div class="stat-value" id="kpi-range">–</div>
+        <div class="stat-note">lowest – highest vehicles</div>
+      </div></div></div>
+    </div>
+
+    <div class="legend mb-3" aria-label="Density colours">
+      {% for r in rules %}
+        <span class="legend-item"><span class="swatch density-{{ r.density|lower }}"></span>{{ r.density }} ({{ r.min }}–{{ r.max }})</span>
+      {% endfor %}
+    </div>
+
+    <div class="row g-4">
+      <section class="col-12">
+        <div class="card"><div class="card-body">
+          <h2 class="h6 mb-0">Vehicle count per run</h2>
+          <p class="small text-muted mb-2">Latest {{ analytics_runs }} runs, oldest on the left. Dashed lines mark the rule boundaries.</p>
+          <div class="chart-box chart-tall"><canvas id="runs-chart" role="img" aria-label="Line chart of vehicle count for each recent simulation run"></canvas></div>
+        </div></div>
+      </section>
+      <section class="col-lg-5">
+        <div class="card h-100"><div class="card-body">
+          <h2 class="h6 mb-0">Runs by density</h2>
+          <p class="small text-muted mb-2">All saved runs.</p>
+          <div class="chart-box"><canvas id="density-chart" role="img" aria-label="Bar chart of the number of runs in each density level"></canvas></div>
+        </div></div>
+      </section>
+      <section class="col-lg-7">
+        <div class="card h-100"><div class="card-body">
+          <h2 class="h6 mb-0">Vehicle count distribution</h2>
+          <p class="small text-muted mb-2">How many runs fell in each count range.</p>
+          <div class="chart-box"><canvas id="distribution-chart" role="img" aria-label="Histogram of runs by vehicle count range"></canvas></div>
+        </div></div>
+      </section>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>window.TRAFFIC_RULES = {{ rules|tojson }};</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='common.js') }}"></script>
+  <script src="{{ url_for('static', filename='analytics.js') }}"></script>
+{% endblock %}

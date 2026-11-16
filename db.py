@@ -64,14 +64,42 @@ def insert_record(scenario_label, vehicle_count, density_level, green_time_secon
         return cur.fetchone()
 
 
-def list_records(limit=50):
-    """Newest first."""
+def list_records(limit=50, offset=0, density=None):
+    """Newest first, optionally filtered by density level."""
+    where, params = ("WHERE density_level = %s", [density]) if density else ("", [])
     with get_db().cursor() as cur:
         cur.execute(
-            "SELECT * FROM traffic_records ORDER BY created_at DESC, traffic_id DESC LIMIT %s",
-            (limit,),
+            f"SELECT * FROM traffic_records {where} "
+            "ORDER BY created_at DESC, traffic_id DESC LIMIT %s OFFSET %s",
+            (*params, limit, offset),
         )
         return cur.fetchall()
+
+
+def count_records(density=None):
+    where, params = ("WHERE density_level = %s", [density]) if density else ("", [])
+    with get_db().cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) AS n FROM traffic_records {where}", params)
+        return cur.fetchone()["n"]
+
+
+def summary():
+    with get_db().cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS total_runs, AVG(vehicle_count) AS avg_count, "
+            "MIN(vehicle_count) AS min_count, MAX(vehicle_count) AS max_count, "
+            "AVG(green_time_seconds) AS avg_green FROM traffic_records"
+        )
+        return cur.fetchone()
+
+
+def count_frequencies():
+    """{vehicle_count: number of runs} across all saved records."""
+    with get_db().cursor() as cur:
+        cur.execute(
+            "SELECT vehicle_count, COUNT(*) AS total FROM traffic_records GROUP BY vehicle_count"
+        )
+        return {row["vehicle_count"]: row["total"] for row in cur.fetchall()}
 
 
 def density_totals():

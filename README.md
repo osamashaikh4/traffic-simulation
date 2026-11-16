@@ -37,20 +37,33 @@ pip install -r requirements.txt
 export MYSQL_HOST=localhost MYSQL_PORT=3306 MYSQL_USER=root MYSQL_PASSWORD= MYSQL_DATABASE=smart_traffic
 
 flask --app app init-db      # creates the database and the traffic_records table
-flask --app app run          # open http://127.0.0.1:5000
+flask --app app run --port 8000   # open http://127.0.0.1:8000
 ```
+
+On macOS, port 5000 is used by AirPlay Receiver (you get "Access denied"), so use another port such as 8000.
 
 The table definition is in `schema.sql` if you prefer to create it by hand.
 
 ## Using the dashboard
 
+A sidebar links the three pages.
+
+**Home** - run simulations.
 1. Optionally type a scenario label (e.g. "Test Run 1").
 2. Click **Simulate Traffic**: the browser generates a random whole number
    from 0 to 50 and sends it to Flask.
 3. Flask validates the value, applies the rules, saves the record and returns it.
 4. The three result cards show count, density and green time, with a sentence
    explaining which rule was applied. The matching rule row is highlighted.
-5. The history table (newest first) and two charts update from the database.
+5. **Recent results** shows the latest 3 saved runs.
+
+**Reports** - every saved run, newest first, 25 per page, with Low / Medium /
+High filters and a button to clear all records.
+
+**Analytics** (hidden for now - start the app with `SHOW_ANALYTICS=1` to show it) - summary figures (total runs, average count, average green
+time, count range) and three charts: vehicle count per run (latest 50, with
+the rule boundaries marked), runs by density, and the vehicle-count
+distribution.
 
 For boundary testing, open **Manual test value** and enter an exact number
 (e.g. 10, 11, 25, 26). Blank, negative, over-50, decimal and non-numeric
@@ -60,13 +73,13 @@ not rounded (documented rule for TC13).
 ## Project structure
 
 ```
-app.py           Flask app: routes, JSON API, init-db command
+app.py           Flask app: pages, JSON API, init-db command
 rules.py         Density and green-time rules (single source of truth)
 validation.py    Input validation for vehicle counts and scenario labels
 db.py            MySQL access (PyMySQL)
 schema.sql       traffic_records table
-templates/       Dashboard page (Bootstrap 5)
-static/          Dashboard JavaScript (Chart.js 4) and CSS
+templates/       base.html (sidebar layout), home, reports, analytics (Bootstrap 5)
+static/          Page JavaScript (Chart.js 4 on Analytics) and CSS
 tests/           Automated tests for report chapter 5
 ```
 
@@ -74,9 +87,12 @@ tests/           Automated tests for report chapter 5
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET    | `/` | Dashboard |
+| GET    | `/` | Home page |
+| GET    | `/reports?density=High&page=2` | Reports page (both parameters optional) |
+| GET    | `/analytics` | Analytics page |
 | POST   | `/api/simulations` | Body `{"vehicle_count": 40, "scenario_label": "optional"}` → 201 with saved record, or 400 with `error` |
-| GET    | `/api/simulations` | Latest 50 records (newest first) and totals per density |
+| GET    | `/api/simulations?limit=3` | Latest records (newest first, default 50) and totals per density |
+| GET    | `/api/analytics` | Summary figures, density totals, latest 50 runs and count distribution |
 | DELETE | `/api/simulations` | Clear all records |
 
 ## Tests

@@ -98,3 +98,75 @@ def test_clear_history(client, row_count):
 def test_dashboard_page_renders(client):
     html = client.get("/").get_data(as_text=True)
     assert "Simulate Traffic" in html
+
+
+# --- Dashboard pages: Home, Reports, Analytics ----------------------------
+
+def _run(client, *counts):
+    for n in counts:
+        client.post("/api/simulations", json={"vehicle_count": n})
+
+
+def test_analytics_hidden_by_default(client):
+    html = client.get("/").get_data(as_text=True)
+    assert 'href="/analytics"' not in html
+    assert client.get("/analytics").status_code == 404
+    assert client.get("/api/analytics").status_code == 404
+
+
+def test_sidebar_links_on_every_page(client, app):
+    app.config["SHOW_ANALYTICS"] = True
+    for path in ("/", "/reports", "/analytics"):
+        html = client.get(path).get_data(as_text=True)
+        for link in ('href="/"', 'href="/reports"', 'href="/analytics"'):
+            assert link in html, f"{link} missing on {path}"
+        assert 'aria-current="page"' in html
+
+
+def test_home_recent_results_limited_to_three(client):
+    _run(client, 1, 12, 30, 45, 8)
+    records = client.get("/api/simulations?limit=3").get_json()["records"]
+    assert [r["vehicle_count"] for r in records] == [8, 45, 30]
+
+
+def test_reports_lists_all_runs_and_filters_by_density(client):
+    _run(client, 3, 14, 27, 49)
+    html = client.get("/reports").get_data(as_text=True)
+    assert "Showing 1–4 of 4" in html
+    high = client.get("/reports?density=High").get_data(as_text=True)
+    assert "Showing 1–2 of 2" in high
+    assert client.get("/reports?density=Bogus").status_code == 400
+
+
+def test_reports_pagination(client):
+    _run(client, *range(0, 30))
+    page2 = client.get("/reports?page=2").get_data(as_text=True)
+    assert "Showing 26–30 of 30" in page2
+    # out-of-range page numbers are clamped
+    assert "Showing 26–30 of 30" in client.get("/reports?page=99").get_data(as_text=True)
+
+
+def test_reports_empty_state(client):
+    assert "No simulations saved yet" in client.get("/reports").get_data(as_text=True)
+
+
+def test_analytics_api(client, app):
+    app.config["SHOW_ANALYTICS"] = True
+    _run(client, 4, 10, 11, 30, 50)
+    data = client.get("/api/analytics").get_json()
+    assert data["summary"] == {"total_runs": 5, "avg_count": 21.0, "min_count": 4,
+                               "max_count": 50, "avg_green": 30.0}
+    assert data["totals"] == {"Low": 2, "Medium": 1, "High": 2}
+    assert [r["vehicle_count"] for r in data["recent"]] == [4, 10, 11, 30, 50]  # oldest first
+    buckets = {b["label"]: b for b in data["distribution"]}
+    assert buckets["0–5"]["runs"] == 1 and buckets["6–10"]["runs"] == 1
+    assert buckets["11–15"]["runs"] == 1 and buckets["11–15"]["density"] == "Medium"
+    assert buckets["46–50"]["runs"] == 1 and buckets["46–50"]["density"] == "High"
+    assert sum(b["runs"] for b in data["distribution"]) == 5
+
+
+def test_analytics_api_empty(client, app):
+    app.config["SHOW_ANALYTICS"] = True
+    data = client.get("/api/analytics").get_json()
+    assert data["summary"]["total_runs"] == 0
+    assert data["summary"]["avg_count"] is None
