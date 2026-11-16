@@ -38,7 +38,7 @@
         </div>
         <div class="topbar-actions">{% block actions %}{% endblock %}</div>
       </header>
-      <main class="page">
+      <main class="page {% block page_class %}{% endblock %}">
         {% block content %}{% endblock %}
       </main>
     </div>

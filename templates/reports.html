@@ -3,6 +3,7 @@
 {% block title %}Reports{% endblock %}
 {% block heading %}Reports{% endblock %}
 {% block meta %}Every traffic simulation that has been run and saved{% endblock %}
+{% block page_class %}page-wide{% endblock %}
 
 {% block actions %}
   {% if total %}
@@ -29,14 +30,6 @@
         </a>
       {% endfor %}
     </nav>
-    <form class="per-page" method="get" action="{{ url_for('reports') }}">
-      {% if density %}<input type="hidden" name="density" value="{{ density }}">{% endif %}
-      <label for="per-page">Rows per page</label>
-      <select id="per-page" name="per_page" class="select" onchange="this.form.submit()">
-        {% for n in page_sizes %}<option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>{% endfor %}
-      </select>
-      <noscript><button class="btn" type="submit">Apply</button></noscript>
-    </form>
   </div>
 
   <div id="request-error" class="callout" role="alert" hidden style="margin-bottom:12px">{{ icon('alert') }}<span></span></div>
@@ -67,7 +60,17 @@
     </div>
     {% if total %}
     <div class="panel-foot">
-      <span class="num">Showing {{ first }}–{{ last }} of {{ total }}</span>
+      <div class="foot-left">
+        <span class="num">Showing {{ first }}–{{ last }} of {{ total }}</span>
+        <form class="per-page" method="get" action="{{ url_for('reports') }}">
+          {% if density %}<input type="hidden" name="density" value="{{ density }}">{% endif %}
+          <label for="per-page">Rows per page</label>
+          <select id="per-page" name="per_page" class="select" onchange="this.form.submit()">
+            {% for n in page_sizes %}<option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>{% endfor %}
+          </select>
+          <noscript><button class="btn" type="submit">Apply</button></noscript>
+        </form>
+      </div>
       {% if pages > 1 %}
       <nav class="pager" aria-label="Report pages">
         {% if page > 1 %}
