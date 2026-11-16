@@ -2,10 +2,10 @@
 window.Traffic = (function () {
   "use strict";
 
-  // Reads a CSS custom property so charts follow the current light/dark theme.
+  // Reads a CSS custom property so charts use the same colours as the page.
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-  // Density colours (validated CVD-safe in both themes; always paired with a text label).
+  // Density colours (validated colour-blind safe; always paired with a text label).
   const colors = () => ({ Low: cssVar("--low"), Medium: cssVar("--medium"), High: cssVar("--high") });
 
   function statusEl(level) {

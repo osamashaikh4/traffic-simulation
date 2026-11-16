@@ -46,9 +46,8 @@ The table definition is in `schema.sql` if you prefer to create it by hand.
 
 ## Using the dashboard
 
-A sidebar links the pages. The interface follows your system's light/dark
-setting, and the sidebar has a toggle to switch manually. Everything (font
-and chart library) is served from `static/vendor/`, so it works offline.
+A sidebar links the pages. Everything (font and chart library) is served
+from `static/vendor/`, so it works offline.
 
 **Home** - run simulations.
 1. Optionally type a scenario label (e.g. "Test Run 1").

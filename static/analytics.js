@@ -41,7 +41,7 @@
       ctx.lineWidth = 1;
       ctx.strokeStyle = opts.color;
       ctx.fillStyle = opts.ink;
-      ctx.font = "11px " + Chart.defaults.font.family;
+      ctx.font = "13px " + Chart.defaults.font.family;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       RULES.slice(0, -1).forEach((r) => {
@@ -65,7 +65,7 @@
       const total = values.reduce((a, b) => a + b, 0);
       ctx.save();
       ctx.fillStyle = opts.color;
-      ctx.font = "600 12px " + Chart.defaults.font.family;
+      ctx.font = "600 14px " + Chart.defaults.font.family;
       ctx.textAlign = "center";
       chart.getDatasetMeta(0).data.forEach((bar, i) => {
         if (!values[i] && !opts.showZero) return;
@@ -97,15 +97,15 @@
           pointBackgroundColor: pointColors,
           pointBorderColor: t.surface,
           pointBorderWidth: 2,
-          pointRadius: 5,
-          pointHoverRadius: 7,
+          pointRadius: 6,
+          pointHoverRadius: 8,
           tension: 0,
           clip: false, // keep points at 0 and 50 fully visible
         }],
       },
       options: {
         maintainAspectRatio: false,
-        layout: { padding: { right: 84, top: 8 } },
+        layout: { padding: { right: 100, top: 8 } },
         interaction: { mode: "index", intersect: false },
         scales: scales(t, { min: 0, max: 50, title: { display: true, text: "Vehicles" } }),
         plugins: {
@@ -198,6 +198,7 @@
     const t = theme();
     Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
     Chart.defaults.color = t.ink;
+    Chart.defaults.font.size = 13;
     charts = [runsChart(t, data.recent), densityChart(t, data.totals), distributionChart(t, data.distribution)];
   }
 
@@ -216,10 +217,6 @@
     }
   }
 
-  window.addEventListener("themechange", () => { if (data && data.summary.total_runs) drawCharts(); });
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-    if (data && data.summary.total_runs) drawCharts();
-  });
 
   load();
 })();

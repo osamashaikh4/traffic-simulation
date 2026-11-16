@@ -5,10 +5,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} · Smart Traffic</title>
-  <script>
-    // Apply a saved theme before first paint to avoid a flash.
-    try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
   <link rel="preload" href="{{ url_for('static', filename='vendor/inter/inter-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -26,16 +22,10 @@
         {% for endpoint, label, ic in nav %}
           <a class="nav-item {% if request.endpoint == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}"
              {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>
-            {{ icon(ic) }}<span>{{ label }}</span>
+            {{ icon(ic, 18) }}<span>{{ label }}</span>
           </a>
         {% endfor %}
       </nav>
-      <div class="sidebar-foot">
-        <button class="nav-item theme-toggle" type="button" id="theme-toggle">
-          <span class="when-light">{{ icon('moon') }}<span>Dark mode</span></span>
-          <span class="when-dark">{{ icon('sun') }}<span>Light mode</span></span>
-        </button>
-      </div>
     </aside>
     <div class="backdrop" data-close-sidebar></div>
 
@@ -66,16 +56,6 @@
       menuBtn.addEventListener("click", () => setOpen(true));
       document.querySelectorAll("[data-close-sidebar]").forEach((el) => el.addEventListener("click", () => setOpen(false)));
       document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
-
-      const isDark = () => root.dataset.theme
-        ? root.dataset.theme === "dark"
-        : matchMedia("(prefers-color-scheme: dark)").matches;
-      document.getElementById("theme-toggle").addEventListener("click", () => {
-        const next = isDark() ? "light" : "dark";
-        root.dataset.theme = next;
-        try { localStorage.setItem("theme", next); } catch (e) {}
-        window.dispatchEvent(new Event("themechange"));
-      });
     })();
   </script>
   {% block scripts %}{% endblock %}
