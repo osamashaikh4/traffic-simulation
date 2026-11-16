@@ -1,0 +1,125 @@
+SMART TRAFFIC MONITORING - SETUP ON A NEW WINDOWS PC
+=====================================================
+
+1. INSTALL THE PREREQUISITES (one time)
+---------------------------------------
+a) Git
+   https://git-scm.com/download/win
+   Install with the default options.
+
+b) Python 3.10 or newer
+   https://www.python.org/downloads/
+   IMPORTANT: on the first installer screen tick "Add python.exe to PATH".
+
+c) MySQL 8
+   https://dev.mysql.com/downloads/installer/
+   - Choose "Server only".
+   - Keep the defaults (port 3306, service name "MySQL80", start at boot).
+   - Set a root password and WRITE IT DOWN - you need it in step 4.
+
+
+2. DOWNLOAD THE PROJECT (one time)
+----------------------------------
+Open PowerShell (Start menu > type "PowerShell") and run:
+
+   cd $HOME\Desktop
+   git clone https://github.com/osamashaikh4/traffic-simulation.git
+   cd traffic-simulation
+
+
+3. CREATE THE PYTHON ENVIRONMENT (one time)
+-------------------------------------------
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+
+If PowerShell says "running scripts is disabled on this system", run this
+once, answer Y, then run the Activate line again:
+
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+When the environment is active the prompt starts with (.venv).
+
+
+4. SET YOUR MYSQL PASSWORD (every new PowerShell window)
+--------------------------------------------------------
+   $env:MYSQL_PASSWORD="your-root-password"
+
+Replace your-root-password with the password from step 1c.
+This only lasts until you close the window.
+
+
+5. CREATE THE DATABASE (one time)
+---------------------------------
+   flask --app app init-db
+
+You should see:  Database 'smart_traffic' is ready.
+
+
+6. RUN THE WEBSITE
+------------------
+   flask --app app run --port 8000
+
+Open http://127.0.0.1:8000 in Chrome or Edge.
+Press Ctrl+C in PowerShell to stop the server.
+
+
+STARTING IT AGAIN LATER
+-----------------------
+Open PowerShell and run:
+
+   cd $HOME\Desktop\traffic-simulation
+   .venv\Scripts\Activate.ps1
+   $env:MYSQL_PASSWORD="your-root-password"
+   flask --app app run --port 8000
+
+
+GETTING THE LATEST VERSION FROM GITHUB
+--------------------------------------
+   cd $HOME\Desktop\traffic-simulation
+   git pull
+   .venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   $env:MYSQL_PASSWORD="your-root-password"
+   flask --app app init-db
+
+(init-db is safe to re-run: it keeps your saved records and only adds
+anything new the update needs.)
+
+
+OPTIONAL: RUN THE AUTOMATED TESTS
+---------------------------------
+   pytest -v
+
+The tests use a separate database called smart_traffic_test, so your real
+records are not touched.
+
+
+OPTIONAL: SHOW THE ANALYTICS PAGE
+---------------------------------
+The Analytics page is hidden for now. To show it, run this before step 6:
+
+   $env:SHOW_ANALYTICS="1"
+
+
+TROUBLESHOOTING
+---------------
+"The database is not available"
+   MySQL is not running or the password is wrong.
+   - Start it: Start menu > "Services" > find "MySQL80" > Start.
+   - Check the password you set in step 4.
+
+"Access denied for user 'root'@'localhost'"
+   Wrong MySQL password. Repeat step 4 with the correct one.
+
+"flask is not recognized" / "No module named flask"
+   The environment is not active. Run:  .venv\Scripts\Activate.ps1
+
+"python is not recognized"
+   Python was installed without "Add python.exe to PATH". Re-run the
+   Python installer, choose "Modify", and enable "Add Python to
+   environment variables". Then open a new PowerShell window.
+
+The page does not open / "Access denied" in the browser
+   Another program is using port 8000. Use a different port:
+   flask --app app run --port 8080   (then open http://127.0.0.1:8080)
