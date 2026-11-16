@@ -88,22 +88,23 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .nav-item.active { background: var(--active); color: var(--text); }
 .nav-item .icon { color: var(--text-3); }
 .nav-item.active .icon, .nav-item:hover .icon { color: var(--text-2); }
-.sidebar-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
-.collapse-btn > span { display: flex; align-items: center; gap: 12px; }
+.collapse-btn { margin-left: auto; }
+.collapse-btn > span { display: flex; }
 .when-collapsed { display: none !important; }
 
 @media (min-width: 901px) {
   .sidebar { transition: width .18s ease; overflow: hidden; }
   .sidebar-collapsed .sidebar { width: 68px; }
-  .sidebar-collapsed .workspace { justify-content: center; padding-left: 0; padding-right: 0; }
+  .sidebar-collapsed .workspace { flex-direction: column; gap: 10px; padding-left: 0; padding-right: 0; }
+  .sidebar-collapsed .collapse-btn { margin-left: 0; }
   .sidebar-collapsed .workspace-name,
-  .sidebar-collapsed .nav-item > span:not(.when-collapsed),
+  .sidebar-collapsed .nav-item > span,
   .sidebar-collapsed .when-expanded { display: none !important; }
   .sidebar-collapsed .when-collapsed { display: flex !important; }
   .sidebar-collapsed .nav-item { justify-content: center; padding: 0; }
   .nav-item > span { white-space: nowrap; }
 }
-@media (max-width: 900px) { .sidebar-foot { display: none; } }
+@media (max-width: 900px) { .collapse-btn { display: none; } }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {

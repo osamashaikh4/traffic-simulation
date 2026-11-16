@@ -20,6 +20,10 @@
       <div class="workspace">
         <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="workspace-name">Smart Traffic</span>
+        <button class="icon-btn collapse-btn" type="button" id="collapse-btn" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
+          <span class="when-expanded">{{ icon('sidebar', 18) }}</span>
+          <span class="when-collapsed">{{ icon('sidebar-open', 18) }}</span>
+        </button>
         <button class="icon-btn sidebar-close" type="button" data-close-sidebar aria-label="Close menu">{{ icon('close') }}</button>
       </div>
       <nav class="nav">
@@ -30,12 +34,6 @@
           </a>
         {% endfor %}
       </nav>
-      <div class="sidebar-foot">
-        <button class="nav-item collapse-btn" type="button" id="collapse-btn" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
-          <span class="when-expanded">{{ icon('sidebar', 18) }}<span>Collapse</span></span>
-          <span class="when-collapsed">{{ icon('sidebar-open', 18) }}</span>
-        </button>
-      </div>
     </aside>
     <div class="backdrop" data-close-sidebar></div>
 
