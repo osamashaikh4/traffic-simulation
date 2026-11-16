@@ -24,8 +24,8 @@
   const H = 560;
   const ROAD = { hTop: 238, hBot: 322, hMid: 280, vLeft: 758, vRight: 842, vMid: 800 };
   const SIDEWALK = 12;
-  // The part of the world shown: full width, trimming empty ground above and below.
-  const VIEW = { x: 0, y: 70, w: W, h: 420 };
+  // The part of the world shown: a close-up centred on the junction.
+  const VIEW = { x: 540, y: 80, w: 520, h: 400 };
   const METRES_PER_UNIT = 0.15;
 
   const GEOM = {
@@ -43,7 +43,7 @@
   ];
 
   const TYPES = {
-    car: { name: "Car", len: 21, w: 12, v0: 90, colors: ["#f1f3f4", "#202124", "#9aa0a6", "#1a56db", "#b42318", "#f8fafc", "#4b5563", "#0f766e", "#7c2d12"] },
+    car: { name: "Car", len: 21, w: 12, v0: 90, colors: ["#2f7bf6", "#2f7bf6", "#f2c230", "#e0453a", "#eef1f5", "#eef1f5", "#b9c2cf", "#2b313c"] },
     cng: { name: "CNG auto-rickshaw", len: 16, w: 11, v0: 80, colors: ["#15803d"] },
     bus: { name: "Bus", len: 36, w: 13, v0: 75, colors: ["#b42318", "#1d4ed8", "#c2410c", "#047857"] },
   };
@@ -275,16 +275,46 @@
   // City layout (generated once from a fixed seed)
   // ---------------------------------------------------------------------------
 
+  // Decoration: grass texture, trees in the four corners, lamp posts (night).
   function buildCity() {
-    const city = { lamps: [] };
+    const rand = mulberry32(11);
+    const city = { trees: [], speckles: [], lamps: [], grit: [] };
+    const corners = [
+      [VIEW.x - 40, VIEW.y - 40, ROAD.vLeft - SIDEWALK, ROAD.hTop - SIDEWALK],
+      [ROAD.vRight + SIDEWALK, VIEW.y - 40, VIEW.x + VIEW.w + 40, ROAD.hTop - SIDEWALK],
+      [VIEW.x - 40, ROAD.hBot + SIDEWALK, ROAD.vLeft - SIDEWALK, VIEW.y + VIEW.h + 40],
+      [ROAD.vRight + SIDEWALK, ROAD.hBot + SIDEWALK, VIEW.x + VIEW.w + 40, VIEW.y + VIEW.h + 40],
+    ];
+    for (const [x0, y0, x1, y1] of corners) {
+      for (let i = 0; i < 260; i++) {
+        city.speckles.push({ x: x0 + rand() * (x1 - x0), y: y0 + rand() * (y1 - y0), r: 1 + rand() * 2.2, light: rand() < 0.5 });
+      }
+      // Trees, kept away from the kerb so they never cover the road.
+      let placed = 0;
+      for (let tries = 0; tries < 400 && placed < 9; tries++) {
+        const r = 11 + rand() * 9;
+        const x = x0 + r + rand() * Math.max(1, x1 - x0 - 2 * r);
+        const y = y0 + r + rand() * Math.max(1, y1 - y0 - 2 * r);
+        const nearRoadX = Math.min(Math.abs(x - (ROAD.vLeft - SIDEWALK)), Math.abs(x - (ROAD.vRight + SIDEWALK)));
+        const nearRoadY = Math.min(Math.abs(y - (ROAD.hTop - SIDEWALK)), Math.abs(y - (ROAD.hBot + SIDEWALK)));
+        if (nearRoadX < r + 14 || nearRoadY < r + 14) continue;
+        if (city.trees.some((t) => Math.hypot(t.x - x, t.y - y) < (t.r + r) * 0.85)) continue;
+        city.trees.push({ x, y, r, seed: rand() });
+        placed++;
+      }
+    }
+    for (let i = 0; i < 900; i++) {
+      city.grit.push({ x: rand() * W, y: rand() * H, a: 0.03 + rand() * 0.05 });
+    }
     for (let x = 60; x < W; x += 116) {
       if (x > ROAD.vLeft - 30 && x < ROAD.vRight + 30) continue;
-      city.lamps.push({ x, y: ROAD.hTop - 4 }, { x: x + 58, y: ROAD.hBot + 4 });
+      city.lamps.push({ x, y: ROAD.hTop - 6 }, { x: x + 58, y: ROAD.hBot + 6 });
     }
     for (let y = 40; y < H; y += 116) {
       if (y > ROAD.hTop - 30 && y < ROAD.hBot + 30) continue;
-      city.lamps.push({ x: ROAD.vLeft - 4, y }, { x: ROAD.vRight + 4, y: y + 58 });
+      city.lamps.push({ x: ROAD.vLeft - 6, y }, { x: ROAD.vRight + 6, y: y + 58 });
     }
+    city.trees.sort((a, b) => a.y - b.y);
     return city;
   }
 
@@ -303,44 +333,103 @@
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
   }
 
+  function drawTree(ctx, t) {
+    const { x, y, r } = t;
+    ctx.fillStyle = "rgba(0,0,0,.28)";
+    ctx.beginPath(); ctx.ellipse(x + r * 0.35, y + r * 0.4, r * 1.05, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+    const blobs = 5;
+    for (let i = 0; i < blobs; i++) {
+      const ang = (i / blobs) * Math.PI * 2 + t.seed * 6;
+      const bx = x + Math.cos(ang) * r * 0.45;
+      const by = y + Math.sin(ang) * r * 0.45;
+      const br = r * (0.55 + ((t.seed * 97 + i * 13) % 10) / 40);
+      const g = ctx.createRadialGradient(bx - br * 0.4, by - br * 0.4, br * 0.1, bx, by, br);
+      g.addColorStop(0, "#8cc461");
+      g.addColorStop(0.55, "#4f8f38");
+      g.addColorStop(1, "#2a5a22");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+    }
+    const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.05, x, y, r * 0.7);
+    g.addColorStop(0, "#9fd36f");
+    g.addColorStop(1, "rgba(79,143,56,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  }
 
   function drawBackground(ctx) {
-    ctx.fillStyle = "#f3f3f1";
+    // Grass
+    const grass = ctx.createLinearGradient(0, 0, W, H);
+    grass.addColorStop(0, "#4b8a3a");
+    grass.addColorStop(1, "#3f7a31");
+    ctx.fillStyle = grass;
     ctx.fillRect(0, 0, W, H);
+    for (const s of CITY.speckles) {
+      ctx.fillStyle = s.light ? "rgba(140,200,95,.35)" : "rgba(30,70,25,.3)";
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
 
-    // Sidewalks
-    ctx.fillStyle = "#e1e1dd";
-    ctx.fillRect(0, ROAD.hTop - SIDEWALK, W, ROAD.hBot - ROAD.hTop + SIDEWALK * 2);
-    ctx.fillRect(ROAD.vLeft - SIDEWALK, 0, ROAD.vRight - ROAD.vLeft + SIDEWALK * 2, H);
-
+    // Sidewalks (with rounded inner corners) and kerb lines
+    const sw = SIDEWALK;
+    ctx.fillStyle = "#b9bec6";
+    ctx.fillRect(0, ROAD.hTop - sw, W, ROAD.hBot - ROAD.hTop + sw * 2);
+    ctx.fillRect(ROAD.vLeft - sw, 0, ROAD.vRight - ROAD.vLeft + sw * 2, H);
+    ctx.strokeStyle = "rgba(0,0,0,.08)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 14) {
+      if (x > ROAD.vLeft - sw && x < ROAD.vRight + sw) continue;
+      line(ctx, x, ROAD.hTop - sw, x, ROAD.hTop);
+      line(ctx, x, ROAD.hBot, x, ROAD.hBot + sw);
+    }
+    for (let y = 0; y < H; y += 14) {
+      if (y > ROAD.hTop - sw && y < ROAD.hBot + sw) continue;
+      line(ctx, ROAD.vLeft - sw, y, ROAD.vLeft, y);
+      line(ctx, ROAD.vRight, y, ROAD.vRight + sw, y);
+    }
 
     // Asphalt
-    ctx.fillStyle = "#454a51";
+    ctx.fillStyle = "#3b4049";
     ctx.fillRect(0, ROAD.hTop, W, ROAD.hBot - ROAD.hTop);
     ctx.fillRect(ROAD.vLeft, 0, ROAD.vRight - ROAD.vLeft, H);
-    // The simulated approach: a faint blue wash so the eye goes there first.
-    ctx.fillStyle = "rgba(0,122,255,.18)";
-    ctx.fillRect(0, ROAD.hTop, 732, ROAD.hMid - ROAD.hTop - 2);
-
+    for (const g of CITY.grit) {
+      const onRoad = (g.y > ROAD.hTop && g.y < ROAD.hBot) || (g.x > ROAD.vLeft && g.x < ROAD.vRight);
+      if (!onRoad) continue;
+      ctx.fillStyle = `rgba(255,255,255,${g.a})`;
+      ctx.fillRect(g.x, g.y, 1.4, 1.4);
+    }
+    // Kerb edges
+    ctx.strokeStyle = "#8d939c";
+    ctx.lineWidth = 2;
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
-    ctx.rect(ROAD.vLeft - 24, ROAD.hTop - 24, ROAD.vRight - ROAD.vLeft + 48, ROAD.hBot - ROAD.hTop + 48);
+    ctx.rect(ROAD.vLeft - sw, ROAD.hTop - sw, ROAD.vRight - ROAD.vLeft + sw * 2, ROAD.hBot - ROAD.hTop + sw * 2);
     ctx.clip("evenodd");
-    ctx.strokeStyle = "rgba(255,255,255,.75)";
+    line(ctx, 0, ROAD.hTop, W, ROAD.hTop);
+    line(ctx, 0, ROAD.hBot, W, ROAD.hBot);
+    line(ctx, ROAD.vLeft, 0, ROAD.vLeft, H);
+    line(ctx, ROAD.vRight, 0, ROAD.vRight, H);
+    ctx.restore();
+
+    // The simulated approach: a faint blue wash so the eye goes there first.
+    ctx.fillStyle = "rgba(47,107,255,.14)";
+    ctx.fillRect(0, ROAD.hTop, 732, ROAD.hMid - ROAD.hTop - 1);
+
+    // Lane markings (outside the junction box)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.rect(ROAD.vLeft - 26, ROAD.hTop - 26, ROAD.vRight - ROAD.vLeft + 52, ROAD.hBot - ROAD.hTop + 52);
+    ctx.clip("evenodd");
+    ctx.strokeStyle = "rgba(255,255,255,.85)";
     ctx.lineWidth = 2;
-    line(ctx, 0, ROAD.hTop + 2, W, ROAD.hTop + 2);
-    line(ctx, 0, ROAD.hBot - 2, W, ROAD.hBot - 2);
-    line(ctx, ROAD.vLeft + 2, 0, ROAD.vLeft + 2, H);
-    line(ctx, ROAD.vRight - 2, 0, ROAD.vRight - 2, H);
-    ctx.setLineDash([12, 10]);
+    ctx.setLineDash([14, 12]);
     line(ctx, 0, 258, W, 258);
     line(ctx, 0, 302, W, 302);
     line(ctx, 778, 0, 778, H);
     line(ctx, 822, 0, 822, H);
     ctx.setLineDash([]);
-    ctx.strokeStyle = "#f2c94c";
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.6;
     line(ctx, 0, ROAD.hMid - 2, W, ROAD.hMid - 2);
     line(ctx, 0, ROAD.hMid + 2, W, ROAD.hMid + 2);
     line(ctx, ROAD.vMid - 2, 0, ROAD.vMid - 2, H);
@@ -350,26 +439,34 @@
     // Stop lines
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 3;
-    line(ctx, 732, ROAD.hTop + 2, 732, ROAD.hMid - 3);
-    line(ctx, 868, ROAD.hMid + 3, 868, ROAD.hBot - 2);
-    line(ctx, ROAD.vMid + 3, 212, ROAD.vRight - 2, 212);
-    line(ctx, ROAD.vLeft + 2, 348, ROAD.vMid - 3, 348);
+    line(ctx, 732, ROAD.hTop + 1, 732, ROAD.hMid - 3);
+    line(ctx, 868, ROAD.hMid + 3, 868, ROAD.hBot - 1);
+    line(ctx, ROAD.vMid + 3, 212, ROAD.vRight - 1, 212);
+    line(ctx, ROAD.vLeft + 1, 348, ROAD.vMid - 3, 348);
 
-    // Zebra crossings
-    ctx.fillStyle = "rgba(255,255,255,.85)";
-    for (let y = ROAD.hTop + 3; y < ROAD.hBot - 3; y += 8) {
-      ctx.fillRect(737, y, 15, 4);
-      ctx.fillRect(848, y, 15, 4);
+    // Zebra crossings on all four sides
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    for (let y = ROAD.hTop + 4; y < ROAD.hBot - 4; y += 9) {
+      ctx.fillRect(737, y, 16, 5);
+      ctx.fillRect(847, y, 16, 5);
     }
-    for (let x = ROAD.vLeft + 3; x < ROAD.vRight - 3; x += 8) {
-      ctx.fillRect(x, 216, 4, 15);
-      ctx.fillRect(x, 329, 4, 15);
+    for (let x = ROAD.vLeft + 4; x < ROAD.vRight - 4; x += 9) {
+      ctx.fillRect(x, 216, 5, 16);
+      ctx.fillRect(x, 328, 5, 16);
     }
+
+    for (const t of CITY.trees) drawTree(ctx, t);
   }
 
   function vehiclePose(lane, v) {
     const pos = lane.entry + lane.dir * v.s;
     return lane.axis === "x" ? { x: pos, y: lane.fixed } : { x: lane.fixed, y: pos };
+  }
+
+  function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = (c) => Math.max(0, Math.min(255, Math.round(c + amt * 255)));
+    return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
   }
 
   function drawVehicle(ctx, lane, v) {
@@ -378,44 +475,62 @@
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(lane.angle);
-    if (v.cleared) ctx.globalAlpha = 0.6; // through the junction: shown faded
+    if (v.cleared) ctx.globalAlpha = 0.75; // through the junction: shown slightly faded
     // the vehicle's front is at x = 0 and it extends back to x = -len
 
-    ctx.fillStyle = "rgba(0,0,0,.3)";
-    roundRect(ctx, -len + 2, -w / 2 + 2, len, w, 3); ctx.fill();
+    // soft shadow
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    roundRect(ctx, -len + 1.5, -w / 2 + 2.2, len + 1, w + 0.6, 5); ctx.fill();
 
-    ctx.fillStyle = v.color;
-    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 2 : 4); ctx.fill();
+    // body with a gloss gradient across its width
+    const body = ctx.createLinearGradient(0, -w / 2, 0, w / 2);
+    body.addColorStop(0, shade(v.color, -0.12));
+    body.addColorStop(0.35, shade(v.color, 0.1));
+    body.addColorStop(0.65, v.color);
+    body.addColorStop(1, shade(v.color, -0.18));
+    ctx.fillStyle = body;
+    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 3 : 5); ctx.fill();
 
+    const glass = "rgba(18,28,44,.92)";
     if (v.type === "car") {
-      ctx.fillStyle = "rgba(20,30,45,.85)";
-      ctx.fillRect(-8, -w / 2 + 1.4, 3.2, w - 2.8);
-      ctx.fillRect(-len + 2.8, -w / 2 + 1.8, 2.4, w - 3.6);
-      ctx.fillStyle = "rgba(255,255,255,.14)";
-      ctx.fillRect(-len + 5.4, -w / 2 + 1.8, len - 13.6, w - 3.6);
+      // windscreen, roof, rear window
+      ctx.fillStyle = glass;
+      ctx.beginPath();
+      ctx.moveTo(-5.2, -w / 2 + 1.6); ctx.lineTo(-9.5, -w / 2 + 2.6); ctx.lineTo(-9.5, w / 2 - 2.6); ctx.lineTo(-5.2, w / 2 - 1.6);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = shade(v.color, 0.16);
+      roundRect(ctx, -15.5, -w / 2 + 2.4, 6, w - 4.8, 2); ctx.fill();
+      ctx.fillStyle = glass;
+      roundRect(ctx, -18.6, -w / 2 + 2.6, 3, w - 5.2, 1.5); ctx.fill();
+      // mirrors
+      ctx.fillStyle = shade(v.color, -0.2);
+      ctx.fillRect(-7.5, -w / 2 - 1.2, 2, 1.4);
+      ctx.fillRect(-7.5, w / 2 - 0.2, 2, 1.4);
     } else if (v.type === "cng") {
-      ctx.fillStyle = "#14281d";
-      roundRect(ctx, -len + 1.6, -w / 2 + 0.9, len - 5.6, w - 1.8, 3); ctx.fill();
-      ctx.fillStyle = "rgba(20,30,45,.85)";
+      ctx.fillStyle = "#13261b";
+      roundRect(ctx, -len + 1.6, -w / 2 + 0.9, len - 5.6, w - 1.8, 4); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.12)";
+      roundRect(ctx, -len + 3, -w / 2 + 2, len - 9, 2, 1); ctx.fill();
+      ctx.fillStyle = glass;
       ctx.fillRect(-4, -w / 2 + 1.6, 2, w - 3.2);
     } else {
-      ctx.fillStyle = "rgba(255,255,255,.85)";
-      ctx.fillRect(-len + 2, -1.6, len - 6, 3.2);
-      ctx.fillStyle = "rgba(20,30,45,.85)";
-      ctx.fillRect(-3.8, -w / 2 + 1, 2.8, w - 2);
-      ctx.fillStyle = "rgba(255,255,255,.35)";
-      for (let k = -len + 5; k < -7; k += 6) ctx.fillRect(k, -w / 2 + 2, 3, 2.4);
+      ctx.fillStyle = "rgba(255,255,255,.88)";
+      roundRect(ctx, -len + 3, -w / 2 + 2.2, len - 8, w - 4.4, 2); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,.12)";
+      for (let k = -len + 7; k < -8; k += 7) ctx.fillRect(k, -w / 2 + 2.2, 1, w - 4.4);
+      ctx.fillStyle = glass;
+      ctx.fillRect(-4.2, -w / 2 + 1, 3, w - 2);
     }
 
-    ctx.fillStyle = "#fff6c8";
-    ctx.fillRect(-1.3, -w / 2 + 1, 1.3, 2.2);
-    ctx.fillRect(-1.3, w / 2 - 3.2, 1.3, 2.2);
-    ctx.fillStyle = v.braking ? "#ff2a2a" : "#7f1d1d";
-    ctx.fillRect(-len, -w / 2 + 1, 1.5, 2.4);
-    ctx.fillRect(-len, w / 2 - 3.4, 1.5, 2.4);
+    ctx.fillStyle = "#fff8d6";
+    ctx.fillRect(-1.3, -w / 2 + 1.2, 1.3, 2.4);
+    ctx.fillRect(-1.3, w / 2 - 3.6, 1.3, 2.4);
+    ctx.fillStyle = v.braking ? "#ff2a2a" : "#8a1d1d";
+    ctx.fillRect(-len, -w / 2 + 1.2, 1.6, 2.6);
+    ctx.fillRect(-len, w / 2 - 3.8, 1.6, 2.6);
     if (v.braking) {
-      ctx.fillStyle = "rgba(255,40,40,.25)";
-      ctx.beginPath(); ctx.arc(-len, 0, w * 0.7, Math.PI / 2, Math.PI * 1.5); ctx.fill();
+      ctx.fillStyle = "rgba(255,40,40,.28)";
+      ctx.beginPath(); ctx.arc(-len, 0, w * 0.75, Math.PI / 2, Math.PI * 1.5); ctx.fill();
     }
     ctx.restore();
   }
@@ -443,27 +558,36 @@
     ctx.restore();
   }
 
-  const LAMP = { red: "#ff3b30", amber: "#ffb300", green: "#34c759" };
+  const LAMP = { red: "#ff3b30", amber: "#ffb300", green: "#2bd14f" };
 
-  function drawSignal(ctx, x, y, vertical, state) {
-    const len = 40;
-    const thick = 16;
-    const w = vertical ? thick : len;
-    const h = vertical ? len : thick;
-    ctx.fillStyle = "rgba(0,0,0,.3)";
-    roundRect(ctx, x + 1.5, y + 1.5, w, h, 5); ctx.fill();
-    ctx.fillStyle = "#111";
+  // A signal head on a pole at a corner: three lamps, the lit one glowing.
+  function drawSignal(ctx, x, y, state) {
+    const w = 15;
+    const h = 40;
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    roundRect(ctx, x + 3, y + 4, w, h, 5); ctx.fill();
+    ctx.fillStyle = "#11151c";
     roundRect(ctx, x, y, w, h, 5); ctx.fill();
+    ctx.strokeStyle = "#2a313d";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 5); ctx.stroke();
     ["red", "amber", "green"].forEach((c, i) => {
-      const cx = vertical ? x + thick / 2 : x + 8 + i * 12;
-      const cy = vertical ? y + 8 + i * 12 : y + thick / 2;
+      const cx = x + w / 2;
+      const cy = y + 7.5 + i * 12.5;
       const on = state === c;
       if (on) {
-        ctx.fillStyle = LAMP[c] + "55";
-        ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI * 2); ctx.fill();
+        const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, 14);
+        g.addColorStop(0, LAMP[c] + "cc");
+        g.addColorStop(1, LAMP[c] + "00");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.fillStyle = on ? LAMP[c] : "#3a3a3a";
+      ctx.fillStyle = on ? LAMP[c] : "#2b313b";
       ctx.beginPath(); ctx.arc(cx, cy, 4.6, 0, Math.PI * 2); ctx.fill();
+      if (on) {
+        ctx.fillStyle = "rgba(255,255,255,.55)";
+        ctx.beginPath(); ctx.arc(cx - 1.4, cy - 1.4, 1.4, 0, Math.PI * 2); ctx.fill();
+      }
     });
   }
 
@@ -604,10 +728,10 @@
       }
 
       const { main, cross } = model.state;
-      drawSignal(ctx, 690, 218, false, main);   // west approach (simulated)
-      drawSignal(ctx, 870, 326, false, main);   // east approach
-      drawSignal(ctx, 846, 170, true, cross);   // north approach
-      drawSignal(ctx, 738, 350, true, cross);   // south approach
+      drawSignal(ctx, 735, 178, main);    // west approach (simulated), on its left kerb
+      drawSignal(ctx, 850, 342, main);    // east approach
+      drawSignal(ctx, 852, 176, cross);   // north approach
+      drawSignal(ctx, 733, 344, cross);   // south approach
 
       const info = model.info();
       drawQueueMarkers(info);

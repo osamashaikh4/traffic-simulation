@@ -1,12 +1,11 @@
-// Home page: run simulations and play them on the junction, compare with a
-// fixed signal plan, replay earlier runs, auto mode, rules editor, and the
-// latest results. The browser generates the sample count; the Flask backend
+// Simulation page: run simulations and play them on the junction, compare
+// with a fixed signal plan, replay earlier runs, auto mode and rules editor. The browser generates the sample count; the Flask backend
 // validates it, applies the rules, saves it to MySQL and returns the record.
 
 (function () {
   "use strict";
 
-  const { renderRecordRows, getJSON, showError, colors, cssVar, boundaryLines, statusEl } = window.Traffic;
+  const { getJSON, showError } = window.Traffic;
   const RANGE = window.COUNT_RANGE;
   const GREEN = window.GREEN_RANGE;
   const rules = () => window.TRAFFIC_RULES; // replaced when the rules are edited
@@ -32,6 +31,19 @@
   let busy = false;
   let autoRunning = false;
   let autoRuns = 0;
+
+  // ---- System status pill -------------------------------------------------------
+  const statusPill = el("status-pill");
+  let offline = false;
+  function setStatus() {
+    const state = offline ? "offline" : busy ? "running" : "ready";
+    statusPill.dataset.state = state;
+    el("status-text").textContent = state === "offline" ? "Database Offline" : state === "running" ? "Simulating" : "System Ready";
+  }
+  async function checkStatus() {
+    try { await getJSON("/api/rules"); offline = false; } catch (e) { offline = true; }
+    setStatus();
+  }
 
   // ---- Junction views ----------------------------------------------------------
 
@@ -93,11 +105,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vehicle_count: vehicleCount, scenario_label: labelInput.value }),
       });
-      loadRecent();
+      offline = false;
       await playRecord(body.record, false);
       return body.record;
     } catch (err) {
       showError(err.message);
+      if (/database/i.test(err.message)) offline = true;
       return null;
     } finally {
       setBusy(false);
@@ -149,18 +162,24 @@
   }
 
   function showResult(rec, isReplay) {
+    const rule = rules().find((r) => r.density === rec.density_level);
     el("result-count").textContent = rec.vehicle_count;
     el("result-density").textContent = rec.density_level;
-    el("result-density-wrap").className = `r-value density-${rec.density_level.toLowerCase()}`;
-    el("result-green").innerHTML = `${rec.green_time_seconds}<span class="unit"> s</span>`;
+    el("result-density-wrap").className = `density-pill density-${rec.density_level.toLowerCase()}`;
+    el("result-range").textContent = rule ? `(${rule.min} – ${rule.max} vehicles)` : "";
+    el("result-green").textContent = `${rec.green_time_seconds} Seconds`;
+    el("result-explanation").textContent =
+      `${rec.vehicle_count} vehicles fall within the ${rec.density_level} density category, ` +
+      `so the system recommends ${rec.green_time_seconds} seconds.`;
     el("replay-tag").hidden = !isReplay;
     el("replay-text").textContent = isReplay ? `#${rec.traffic_id}` : "";
     highlightRule(rec.density_level);
 
-    const strip = el("result-metrics");
-    strip.classList.remove("flash");
-    void strip.offsetWidth; // restart animation
-    strip.classList.add("flash");
+    document.querySelectorAll(".stat-card").forEach((card) => {
+      card.classList.remove("flash");
+      void card.offsetWidth; // restart animation
+      card.classList.add("flash");
+    });
   }
 
   function renderVerdict(f, s) {
@@ -194,8 +213,8 @@
   let lastDensity = null;
   function highlightRule(level) {
     lastDensity = level;
-    document.querySelectorAll("#rules-table tbody tr").forEach((tr) => {
-      tr.classList.toggle("active-rule", tr.dataset.density === level);
+    document.querySelectorAll("#rules-view .rule-item").forEach((item) => {
+      item.classList.toggle("active-rule", item.dataset.density === level);
     });
   }
 
@@ -205,7 +224,7 @@
     simulateBtn.disabled = locked;
     manualForm.querySelector("button").disabled = locked;
     compareBtn.disabled = busy;
-    document.querySelectorAll(".replay-btn").forEach((b) => { b.disabled = locked; });
+    setStatus();
   }
 
   // ---- Toolbar: speed, scene, compare, auto, full screen ---------------------------------
@@ -281,111 +300,6 @@
   }
   el("fullscreen-btn").addEventListener("click", toggleFullscreen);
 
-  // ---- Recent results + chart ------------------------------------------------------------
-
-  // One request feeds both the "Recent results" table and the chart.
-  async function loadRecent() {
-    try {
-      const body = await getJSON(`/api/simulations?limit=${Math.max(window.RECENT_LIMIT, window.CHART_RUNS)}`);
-      const tbody = el("recent-body");
-      const recent = body.records.slice(0, window.RECENT_LIMIT);
-      renderRecordRows(tbody, recent, "No simulations saved yet.");
-      if (recent.length) {
-        [...tbody.rows].forEach((tr, i) => {
-          const td = tr.insertCell();
-          td.className = "row-action";
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "replay-btn";
-          b.title = `Replay run #${recent[i].traffic_id}`;
-          b.innerHTML = '<svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M10 9v6l5-3z" fill="currentColor"/></svg> Replay';
-          b.disabled = busy || autoRunning;
-          b.addEventListener("click", () => replay(recent[i].traffic_id));
-          td.appendChild(b);
-        });
-      } else {
-        tbody.rows[0].cells[0].colSpan = 7;
-      }
-      renderChart(body.records.slice(0, window.CHART_RUNS).reverse()); // oldest on the left
-    } catch (err) {
-      el("recent-body").replaceChildren();
-      showError(err.message);
-    }
-  }
-
-  let chart = null;
-
-  function renderChart(runs) {
-    const empty = runs.length === 0;
-    el("runs-chart-box").hidden = empty;
-    el("runs-chart-empty").hidden = !empty;
-    if (empty) return;
-
-    const palette = colors();
-    const ink = cssVar("--text-3");
-    const grid = cssVar("--border");
-    const latest = runs.length - 1;
-    const data = {
-      labels: runs.map((r) => `#${r.traffic_id}`),
-      datasets: [{
-        label: "Vehicle count",
-        data: runs.map((r) => r.vehicle_count),
-        backgroundColor: runs.map((r) => palette[r.density_level]),
-        // Outline the newest run so the latest simulation is easy to spot.
-        borderColor: runs.map((_, i) => (i === latest ? cssVar("--text") : "transparent")),
-        borderWidth: runs.map((_, i) => (i === latest ? 2 : 0)),
-        borderRadius: { topLeft: 4, topRight: 4 },
-        borderSkipped: "bottom",
-        maxBarThickness: 40,
-        categoryPercentage: 0.9,
-        barPercentage: 0.9,
-      }],
-    };
-
-    if (chart) {
-      chart.$runs = runs;
-      chart.data = data;
-      chart.update();
-      return;
-    }
-    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-    Chart.defaults.font.size = 13;
-    Chart.defaults.color = ink;
-    chart = new Chart(el("runs-chart"), {
-      type: "bar",
-      data,
-      options: {
-        maintainAspectRatio: false,
-        layout: { padding: { right: 100, top: 6 } },
-        onClick: (_e, items) => { if (items.length) replay(chart.$runs[items[0].index].traffic_id); },
-        onHover: (e, items) => { e.native.target.style.cursor = items.length ? "pointer" : ""; },
-        scales: {
-          x: { grid: { display: false }, border: { color: grid }, ticks: { color: ink, maxRotation: 0, autoSkip: true } },
-          y: { min: 0, max: 50, grid: { color: grid }, border: { display: false }, ticks: { stepSize: 10, color: ink } },
-        },
-        plugins: {
-          legend: { display: false },
-          boundaryLines: { color: ink, ink },
-          tooltip: {
-            callbacks: {
-              title: (items) => {
-                const r = chart.$runs[items[0].dataIndex];
-                return `Run #${r.traffic_id}${r.scenario_label ? " · " + r.scenario_label : ""}`;
-              },
-              label: (ctx) => {
-                const r = chart.$runs[ctx.dataIndex];
-                return `${r.vehicle_count} vehicles · ${r.density_level} · ${r.green_time_seconds} s green`;
-              },
-              footer: () => "Click to replay",
-            },
-          },
-        },
-      },
-      plugins: [boundaryLines],
-    });
-    chart.$runs = runs;
-  }
-
   // ---- Rules editor ----------------------------------------------------------------------
 
   const rulesForm = el("rules-form");
@@ -418,14 +332,19 @@
   }
 
   function renderRulesTable(list) {
-    el("rules-table").tBodies[0].replaceChildren(...list.map((r) => {
-      const tr = document.createElement("tr");
-      tr.dataset.density = r.density;
-      const range = tr.insertCell(); range.className = "num"; range.textContent = `${r.min}–${r.max}`;
-      tr.insertCell().appendChild(statusEl(r.density));
-      const green = tr.insertCell(); green.className = "num"; green.textContent = `${r.green_time} s`;
-      return tr;
-    }));
+    const art = el("rules-view").querySelector(".rules-art");
+    el("rules-view").replaceChildren(...list.map((r) => {
+      const item = document.createElement("div");
+      item.className = "rule-item";
+      item.dataset.density = r.density;
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = `var(--${r.density.toLowerCase()})`;
+      const text = document.createElement("div");
+      text.innerHTML = `<b>${r.density} Density</b><span>(${r.min}–${r.max} vehicles)</span><br><span>→ ${r.green_time} seconds</span>`;
+      item.append(dot, text);
+      return item;
+    }), art);
     if (lastDensity) highlightRule(lastDensity);
   }
 
@@ -439,7 +358,6 @@
       });
       window.TRAFFIC_RULES = payload.rules;
       renderRulesTable(payload.rules);
-      if (chart) chart.update(); // redraw the boundary lines
       setEditing(false);
       const panel = rulesView.closest(".panel");
       panel.classList.remove("saved-flash");
@@ -520,7 +438,7 @@
   applySpeed(speed);
   applyScene(scene);
   applyCompare(compare);
-  loadRecent();
+  checkStatus();
 
   const replayId = new URLSearchParams(location.search).get("replay");
   if (replayId && /^\d+$/.test(replayId)) {

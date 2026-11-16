@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% block title %}Analytics{% endblock %}
+{% block page_icon %}<span class="hero-icon">{{ icon('bars', 32) }}</span>{% endblock %}
 {% block heading %}Analytics{% endblock %}
-{% block meta %}Charts from the saved simulation records{% endblock %}
 {% block actions %}<a class="btn" href="{{ url_for('reports') }}">{{ icon('reports', 14) }} View data</a>{% endblock %}
 
 {% block content %}

@@ -1,21 +1,68 @@
 {% extends "base.html" %}
-{% from "_icons.html" import icon, status %}
-{% block title %}Home{% endblock %}
-{% block heading %}Home{% endblock %}
+{% from "_icons.html" import icon %}
+{% block title %}Simulation{% endblock %}
+{% block page_icon %}
+  <svg width="58" height="58" viewBox="0 0 64 64" aria-hidden="true">
+    <defs>
+      <linearGradient id="cone" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff7a2f"/><stop offset=".55" stop-color="#ff5a1f"/><stop offset="1" stop-color="#d9400f"/></linearGradient>
+    </defs>
+    <ellipse cx="32" cy="55" rx="27" ry="7" fill="#c7370c"/>
+    <path d="M27 6h10l13 46H14z" fill="url(#cone)"/>
+    <path d="M23.4 22h17.2l2.5 9H20.9zM18.7 39h26.6l2.4 8.6H16.3z" fill="#f4f6fa"/>
+    <path d="M27 6h10l1 3.6H26z" fill="#ff9a5c"/>
+    <ellipse cx="32" cy="52.5" rx="21" ry="4" fill="#ff6a2a" opacity=".6"/>
+  </svg>
+{% endblock %}
+{% block heading %}Traffic Simulation{% endblock %}
+{% block meta %}Generate a random vehicle count and view the recommended signal timing.{% endblock %}
+{% block actions %}<span class="status-pill" id="status-pill" data-state="ready" role="status"><i aria-hidden="true"></i><span id="status-text">System Ready</span></span>{% endblock %}
 
 {% block content %}
-  <!-- Live junction: the centre of the page (UC1 + FR5) -->
-  <section class="panel stage-panel" id="stage-panel" aria-label="Traffic simulation">
-    <div class="stage-toolbar">
-      <button id="simulate-btn" class="btn btn-primary btn-lg" aria-keyshortcuts="S">{{ icon('play', 14) }} Simulate traffic</button>
+  <!-- Generate a count (UC1) -->
+  <section class="panel control-card" aria-label="Run a simulation">
+    <div class="control-info">
+      <span class="dice" aria-hidden="true">
+        <svg width="54" height="54" viewBox="0 0 64 64">
+          <path d="M32 4 56 17v30L32 60 8 47V17z" fill="#dfe9ff"/>
+          <path d="M32 4 56 17 32 30 8 17z" fill="#ffffff"/>
+          <path d="M32 30v30L8 47V17z" fill="#b9cdfa"/>
+          <path d="M32 30 56 17v30L32 60z" fill="#8fb0f5"/>
+          <g fill="#2f6bff"><ellipse cx="32" cy="17" rx="3.4" ry="2.2"/><ellipse cx="22" cy="17" rx="2.6" ry="1.7"/><ellipse cx="42" cy="17" rx="2.6" ry="1.7"/>
+          <circle cx="15" cy="30" r="2.6"/><circle cx="25" cy="47" r="2.6"/><circle cx="20" cy="38.5" r="2.6"/>
+          <circle cx="40" cy="29" r="2.6"/><circle cx="48" cy="25" r="2.6"/><circle cx="40" cy="47" r="2.6"/><circle cx="48" cy="43" r="2.6"/></g>
+        </svg>
+      </span>
+      <span><span class="control-title">Random Vehicle Count</span><br><span class="control-sub">{{ min_count }} – {{ max_count }} vehicles</span></span>
+    </div>
+    <span class="vdivider" aria-hidden="true"></span>
+    <button id="simulate-btn" class="btn btn-primary btn-xl" aria-keyshortcuts="S">{{ icon('play', 18) }} Run Simulation</button>
+    <div class="control-extra">
       <form id="manual-form" class="manual" novalidate>
         <input id="manual-count" class="input num" inputmode="numeric" autocomplete="off"
-               placeholder="{{ min_count }}–{{ max_count }}" aria-label="Manual test value (0 to 50)" aria-describedby="manual-error">
+               placeholder="{{ min_count }}–{{ max_count }}" aria-label="Manual test value (0 to 50)" aria-describedby="manual-error" title="Run a specific count (boundary testing)">
         <button type="submit" class="btn">Run</button>
       </form>
       <input id="scenario-label" class="input label-input" maxlength="50" placeholder="Label" aria-label="Label (optional)" autocomplete="off">
+    </div>
+  </section>
+  <div class="control-errors">
+    <div id="manual-error" class="field-error" role="alert"></div>
+    <div id="request-error" class="callout" role="alert" hidden>{{ icon('alert') }}<span></span></div>
+  </div>
 
-      <div class="toolbar-right">
+  <div class="sim-grid">
+    <!-- Junction -->
+    <section class="panel stage-panel" id="stage-panel" aria-label="Junction simulation">
+      <div class="stages" id="stages">
+        <div class="stage" id="stage-smart"></div>
+        <div class="stage" id="stage-fixed" hidden></div>
+      </div>
+      <div class="verdict" id="verdict" hidden>
+        <div class="v-side" id="v-fixed"></div>
+        <div class="v-mid" id="v-mid"></div>
+        <div class="v-side" id="v-smart"></div>
+      </div>
+      <div class="stage-toolbar">
         <div class="seg" role="radiogroup" aria-label="Speed" id="speed-seg">
           <button type="button" role="radio" data-speed="1" title="Real time">1×</button>
           <button type="button" role="radio" data-speed="2" title="2× speed">2×</button>
@@ -28,116 +75,100 @@
           <button type="button" role="radio" data-scene="night" title="Night" aria-label="Night">{{ icon('moon', 16) }}</button>
           <button type="button" role="radio" data-scene="rain" title="Rain" aria-label="Rain">{{ icon('rain', 16) }}</button>
         </div>
-        <button id="compare-btn" class="btn toggle" type="button" aria-pressed="false" title="Compare with a fixed signal plan">{{ icon('compare', 16) }} Compare</button>
-        <label class="fixed-input" id="fixed-wrap" hidden title="Fixed plan green time">
-          {{ icon('lock', 14) }}<input id="fixed-green" class="input num" inputmode="numeric" value="30" aria-label="Fixed plan green time in seconds"><span>s</span>
-        </label>
-        <button id="auto-btn" class="btn toggle" type="button" aria-pressed="false" title="Run simulations automatically">
-          <span class="auto-off">{{ icon('repeat', 16) }} Auto</span>
-          <span class="auto-on">{{ icon('stop', 14) }} Stop <span class="num" id="auto-count"></span></span>
-        </button>
-        <button id="fullscreen-btn" class="btn icon-only" type="button" title="Full screen (F)" aria-label="Full screen">{{ icon('expand', 16) }}</button>
-      </div>
-    </div>
-    <div id="manual-error" class="field-error toolbar-error" role="alert"></div>
-    <div id="request-error" class="callout toolbar-error" role="alert" hidden>{{ icon('alert') }}<span></span></div>
-
-    <!-- The result in three big numbers -->
-    <div class="result-strip" id="result-metrics" aria-live="polite">
-      <div class="r-cell"><span class="r-label">Vehicles</span><span class="r-value num" id="result-count">–</span></div>
-      <div class="r-cell"><span class="r-label">Density</span><span class="r-value" id="result-density-wrap"><span class="big-dot" aria-hidden="true"></span><span id="result-density">–</span></span></div>
-      <div class="r-cell"><span class="r-label">Green time</span><span class="r-value num" id="result-green">–</span></div>
-      <div class="r-cell r-replay" id="replay-tag" hidden>{{ icon('replay', 15) }} <span id="replay-text"></span></div>
-    </div>
-
-    <div class="stages" id="stages">
-      <div class="stage" id="stage-smart"></div>
-      <div class="stage" id="stage-fixed" hidden></div>
-    </div>
-
-    <!-- Fixed vs smart verdict -->
-    <div class="verdict" id="verdict" hidden>
-      <div class="v-side" id="v-fixed"></div>
-      <div class="v-mid" id="v-mid"></div>
-      <div class="v-side" id="v-smart"></div>
-    </div>
-  </section>
-
-  <!-- Recent runs chart -->
-  <section class="panel" aria-labelledby="chart-heading">
-    <div class="panel-head"><h2 id="chart-heading">Last {{ chart_runs }} runs</h2>
-      <span class="chart-legend" aria-hidden="true">
-        {% for r in rules %}<span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }}</span>{% endfor %}
-      </span>
-    </div>
-    <div class="panel-body">
-      <div class="chart-box short" id="runs-chart-box"><canvas id="runs-chart" role="img" aria-label="Bar chart of vehicle count for the latest simulation runs. Click a bar to replay that run."></canvas></div>
-      <p class="chart-empty" id="runs-chart-empty" hidden>No runs yet</p>
-    </div>
-  </section>
-
-  <div class="grid-2">
-    <!-- Rules (section 4.5) -->
-    <section class="panel" aria-labelledby="rules-heading">
-      <div class="panel-head"><h2 id="rules-heading">Rules</h2>
-        <button class="btn btn-ghost rules-edit-btn" type="button" id="rules-edit-btn">{{ icon('edit', 15) }} Edit</button></div>
-      <div class="table-wrap" id="rules-view">
-        <table class="table" id="rules-table">
-          <thead><tr><th>Vehicle count</th><th>Density</th><th>Green time</th></tr></thead>
-          <tbody>
-          {% for r in rules %}
-            <tr data-density="{{ r.density }}">
-              <td class="num">{{ r.min }}–{{ r.max }}</td>
-              <td>{{ status(r.density) }}</td>
-              <td class="num">{{ r.green_time }} s</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <form id="rules-form" class="rules-form" hidden novalidate>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green (s)</th></tr></thead>
-            <tbody>
-              <tr><td>{{ status('Low') }}</td><td class="num">{{ min_count }}</td>
-                <td><input class="input num" name="low_max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
-                <td><input class="input num" name="low_green" inputmode="numeric" value="{{ rule_config.low_green }}" aria-label="Low green time in seconds"></td></tr>
-              <tr><td>{{ status('Medium') }}</td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
-                <td><input class="input num" name="medium_max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
-                <td><input class="input num" name="medium_green" inputmode="numeric" value="{{ rule_config.medium_green }}" aria-label="Medium green time in seconds"></td></tr>
-              <tr><td>{{ status('High') }}</td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
-                <td class="num">{{ max_count }}</td>
-                <td><input class="input num" name="high_green" inputmode="numeric" value="{{ rule_config.high_green }}" aria-label="High green time in seconds"></td></tr>
-            </tbody>
-          </table>
+        <div class="toolbar-right">
+          <button id="compare-btn" class="btn toggle icon-only" type="button" aria-pressed="false" title="Compare with a fixed signal plan" aria-label="Compare with a fixed signal plan">{{ icon('compare', 17) }}</button>
+          <label class="fixed-input" id="fixed-wrap" hidden title="Fixed plan green time">
+            {{ icon('lock', 14) }}<input id="fixed-green" class="input num" inputmode="numeric" value="30" aria-label="Fixed plan green time in seconds"><span>s</span>
+          </label>
+          <button id="auto-btn" class="btn toggle auto-btn" type="button" aria-pressed="false" title="Run simulations automatically" aria-label="Auto simulate">
+            <span class="auto-off">{{ icon('repeat', 17) }}</span>
+            <span class="auto-on">{{ icon('stop', 14) }} Stop <span class="num" id="auto-count"></span></span>
+          </button>
+          <button id="fullscreen-btn" class="btn icon-only" type="button" title="Full screen (F)" aria-label="Full screen">{{ icon('expand', 16) }}</button>
         </div>
-        <div class="rules-form-foot">
-          <div id="rules-error" class="field-error" role="alert"></div>
-          <div class="rules-actions">
-            <button class="btn btn-ghost" type="button" id="rules-reset">Reset</button>
-            <span class="spacer"></span>
-            <button class="btn" type="button" id="rules-cancel">Cancel</button>
-            <button class="btn btn-primary" type="submit">Save</button>
-          </div>
-        </div>
-      </form>
+      </div>
     </section>
 
-    <!-- Recent results -->
-    <section class="panel" aria-labelledby="recent-heading">
-      <div class="panel-head"><h2 id="recent-heading">Recent results</h2>
-        <a href="{{ url_for('reports') }}" class="link">View all {{ icon('arrow-right', 14) }}</a></div>
+    <!-- Result (FR5) -->
+    <div class="stat-col" id="result-metrics" aria-live="polite">
+      <section class="panel stat-card">
+        <span class="stat-icon">{{ icon('car', 42) }}</span>
+        <div class="stat-body">
+          <div class="stat-label">Generated Vehicles <span class="replay-tag" id="replay-tag" hidden>{{ icon('replay', 14) }}<span id="replay-text"></span></span></div>
+          <div class="stat-value num" id="result-count">–</div>
+        </div>
+      </section>
+      <section class="panel stat-card">
+        <span class="stat-icon">{{ icon('bars', 40) }}</span>
+        <div class="stat-body">
+          <div class="stat-label">Traffic Density</div>
+          <span class="density-pill" id="result-density-wrap"><span id="result-density">–</span></span>
+          <div class="stat-sub" id="result-range"></div>
+        </div>
+      </section>
+      <section class="panel stat-card green">
+        <span class="stat-icon">{{ icon('clock', 46) }}</span>
+        <div class="stat-body">
+          <div class="stat-label">Recommended Green Time</div>
+          <div class="stat-value num" id="result-green">–</div>
+        </div>
+      </section>
+      <section class="panel info-card">
+        <span class="info-dot" aria-hidden="true">i</span>
+        <span id="result-explanation">Press Run Simulation to generate a vehicle count.</span>
+      </section>
+    </div>
+  </div>
+
+  <!-- Rules (section 4.5) -->
+  <section class="panel rules-card" aria-labelledby="rules-heading">
+    <div class="rules-head">
+      <h2 id="rules-heading"><svg class="bulb" width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-4.2 12.6c.7.5 1.2 1.3 1.2 2.2V18h6v-1.2c0-.9.5-1.7 1.2-2.2A7 7 0 0 0 12 2z"/><rect x="9" y="19" width="6" height="2" rx="1" fill="#c9a23a"/><rect x="10" y="21.5" width="4" height="1.5" rx=".75" fill="#c9a23a"/></svg> Traffic Rules Reference</h2>
+      <button class="btn btn-ghost rules-edit-btn" type="button" id="rules-edit-btn">{{ icon('edit', 15) }} Edit</button>
+    </div>
+    <div class="rules-ref" id="rules-view">
+      {% for r in rules %}
+        <div class="rule-item" data-density="{{ r.density }}">
+          <span class="dot" style="background: var(--{{ r.density|lower }})" aria-hidden="true"></span>
+          <div><b>{{ r.density }} Density</b><span>({{ r.min }}–{{ r.max }} vehicles)</span><br><span>→ {{ r.green_time }} seconds</span></div>
+        </div>
+      {% endfor %}
+      <svg class="rules-art" width="86" height="130" viewBox="0 0 86 130" aria-hidden="true">
+        <rect x="39" y="96" width="8" height="34" fill="#152548"/>
+        <rect x="18" y="4" width="50" height="96" rx="12" fill="#111a2e" stroke="#26365c" stroke-width="2"/>
+        <path d="M18 18 6 24v12l12-4zM68 18l12 6v12l-12-4zM18 48 6 54v12l12-4zM68 48l12 6v12l-12-4z" fill="#152548"/>
+        <circle cx="43" cy="26" r="11" fill="#ff3b30"/><circle cx="43" cy="52" r="11" fill="#ffc21a"/><circle cx="43" cy="78" r="11" fill="#28d34b"/>
+        <circle cx="39" cy="22" r="3" fill="#fff" opacity=".45"/><circle cx="39" cy="48" r="3" fill="#fff" opacity=".45"/><circle cx="39" cy="74" r="3" fill="#fff" opacity=".45"/>
+      </svg>
+    </div>
+    <form id="rules-form" class="rules-form" hidden novalidate>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>#</th><th>Label</th><th class="num">Count</th><th>Density</th><th class="num">Green</th><th>Saved</th><th></th></tr></thead>
-          <tbody id="recent-body">
-            <tr><td colspan="7" class="empty">Loading…</td></tr>
+          <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green (s)</th></tr></thead>
+          <tbody>
+            <tr><td><span class="status status-low"><span class="dot"></span>Low</span></td><td class="num">{{ min_count }}</td>
+              <td><input class="input num" name="low_max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
+              <td><input class="input num" name="low_green" inputmode="numeric" value="{{ rule_config.low_green }}" aria-label="Low green time in seconds"></td></tr>
+            <tr><td><span class="status status-medium"><span class="dot"></span>Medium</span></td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
+              <td><input class="input num" name="medium_max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
+              <td><input class="input num" name="medium_green" inputmode="numeric" value="{{ rule_config.medium_green }}" aria-label="Medium green time in seconds"></td></tr>
+            <tr><td><span class="status status-high"><span class="dot"></span>High</span></td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
+              <td class="num">{{ max_count }}</td>
+              <td><input class="input num" name="high_green" inputmode="numeric" value="{{ rule_config.high_green }}" aria-label="High green time in seconds"></td></tr>
           </tbody>
         </table>
       </div>
-    </section>
-  </div>
+      <div class="rules-form-foot">
+        <div id="rules-error" class="field-error" role="alert"></div>
+        <div class="rules-actions">
+          <button class="btn btn-ghost" type="button" id="rules-reset">Reset</button>
+          <span class="spacer"></span>
+          <button class="btn" type="button" id="rules-cancel">Cancel</button>
+          <button class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </div>
+    </form>
+  </section>
 {% endblock %}
 
 {% block scripts %}
@@ -145,10 +176,7 @@
     window.TRAFFIC_RULES = {{ rules|tojson }};
     window.COUNT_RANGE = {min: {{ min_count }}, max: {{ max_count }}};
     window.GREEN_RANGE = {min: {{ green_min }}, max: {{ green_max }}};
-    window.RECENT_LIMIT = {{ recent_limit }};
-    window.CHART_RUNS = {{ chart_runs }};
   </script>
-  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
   <script src="{{ url_for('static', filename='common.js') }}"></script>
   <script src="{{ url_for('static', filename='junction.js') }}"></script>
   <script src="{{ url_for('static', filename='home.js') }}"></script>

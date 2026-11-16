@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Dashboard{% endblock %}
+{% block page_icon %}<span class="hero-icon">{{ icon('grid', 34) }}</span>{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="{{ url_for('home') }}">{{ icon('play', 14) }} Run Simulation</a>{% endblock %}
+
+{% block content %}
+  <div id="request-error" class="callout" role="alert" hidden style="margin-bottom:16px">{{ icon('alert') }}<span></span></div>
+
+  <section class="panel" aria-label="Summary">
+    <div class="metrics four">
+      <div class="metric"><div class="metric-label">Total runs</div><div class="metric-value num" id="tile-total">–</div></div>
+      {% for r in rules %}
+        <div class="metric"><div class="metric-label"><span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }}</span></div>
+          <div class="metric-value num" id="tile-{{ r.density|lower }}">–</div>
+          <div class="metric-sub">{{ r.min }}–{{ r.max }} vehicles · {{ r.green_time }} s</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="chart-heading">
+    <div class="panel-head"><h2 id="chart-heading">Last {{ chart_runs }} runs</h2>
+      <span class="chart-legend" aria-hidden="true">
+        {% for r in rules %}<span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }}</span>{% endfor %}
+      </span>
+    </div>
+    <div class="panel-body">
+      <div class="chart-box" id="runs-chart-box"><canvas id="runs-chart" role="img" aria-label="Bar chart of vehicle count for the latest simulation runs. Click a bar to replay that run."></canvas></div>
+      <p class="chart-empty" id="runs-chart-empty" hidden>No runs yet</p>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="recent-heading">
+    <div class="panel-head"><h2 id="recent-heading">Recent results</h2>
+      <a href="{{ url_for('reports') }}" class="link">View all {{ icon('arrow-right', 14) }}</a></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>#</th><th>Label</th><th class="num">Count</th><th>Density</th><th class="num">Green</th><th>Saved</th><th></th></tr></thead>
+        <tbody id="recent-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    window.TRAFFIC_RULES = {{ rules|tojson }};
+    window.RECENT_LIMIT = {{ recent_limit }};
+    window.CHART_RUNS = {{ chart_runs }};
+  </script>
+  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='common.js') }}"></script>
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}

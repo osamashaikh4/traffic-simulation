@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}About Project{% endblock %}
+{% block page_icon %}<span class="hero-icon">{{ icon('info', 34) }}</span>{% endblock %}
+{% block heading %}About Project{% endblock %}
+
+{% block content %}
+  <section class="panel about-hero">
+    <div>
+      <h2>Smart Traffic Monitoring and Management</h2>
+      <p>A web prototype that shows how a traffic signal could respond to demand at a junction in Bangladesh:
+        a sample vehicle count is classified as Low, Medium or High, and a green-light duration is recommended
+        using simple, transparent rules.</p>
+    </div>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('home') }}">{{ icon('play', 16) }} Try the simulation</a>
+  </section>
+
+  <h3 class="about-h">How it works</h3>
+  <div class="steps">
+    <div class="panel step"><span class="step-n">1</span><b>Generate</b><span>A random whole number of vehicles from {{ min_count }} to {{ max_count }}.</span></div>
+    <div class="panel step"><span class="step-n">2</span><b>Classify</b><span>The count is matched to the Low, Medium or High density band.</span></div>
+    <div class="panel step"><span class="step-n">3</span><b>Recommend</b><span>Each band has a green time; the matching one is recommended.</span></div>
+    <div class="panel step"><span class="step-n">4</span><b>Save &amp; show</b><span>The result is stored in MySQL and shown on the dashboard, history and charts.</span></div>
+  </div>
+
+  <h3 class="about-h">Current rules</h3>
+  <div class="steps three">
+    {% for r in rules %}
+      <div class="panel step rule">
+        <span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }} density</span>
+        <b class="num">{{ r.min }}–{{ r.max }} vehicles</b>
+        <span>→ {{ r.green_time }} seconds of green</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid-2 about-scope">
+    <section class="panel">
+      <div class="panel-head"><h2>Included</h2></div>
+      <ul class="ticks">
+        <li>Website with a simulation, dashboard, history and charts</li>
+        <li>Simulated vehicle counts (0–50) and manual test values</li>
+        <li>Rule-based Low / Medium / High classification</li>
+        <li>Recommended green time (editable rules)</li>
+        <li>MySQL storage of every run, with CSV export</li>
+        <li>Animated junction, including a fixed-timing comparison</li>
+      </ul>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Not included</h2></div>
+      <ul class="crosses">
+        <li>Live cameras, road sensors, GPS or IoT devices</li>
+        <li>Control of real traffic lights</li>
+        <li>Machine learning or traffic prediction</li>
+        <li>Maps, route guidance or multiple junctions</li>
+        <li>Emergency-vehicle priority and user accounts</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="panel note">
+    {{ icon('alert', 20) }}
+    <span>This is an academic demonstration. Vehicle counts are simulated, the thresholds and green times are
+      illustrative values rather than traffic-engineering standards, and nothing here controls a real signal.</span>
+  </section>
+{% endblock %}

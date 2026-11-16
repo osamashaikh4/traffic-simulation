@@ -97,7 +97,7 @@ def test_clear_history(client, row_count):
 
 def test_dashboard_page_renders(client):
     html = client.get("/").get_data(as_text=True)
-    assert "Simulate traffic" in html
+    assert "Run Simulation" in html
 
 
 # --- Dashboard pages: Home, Reports, Analytics ----------------------------
@@ -122,9 +122,9 @@ def test_analytics_can_be_hidden(client, app):
 
 def test_sidebar_links_on_every_page(client, app):
     app.config["SHOW_ANALYTICS"] = True
-    for path in ("/", "/reports", "/analytics"):
+    for path in ("/", "/dashboard", "/reports", "/analytics", "/about"):
         html = client.get(path).get_data(as_text=True)
-        for link in ('href="/"', 'href="/reports"', 'href="/analytics"'):
+        for link in ('href="/"', 'href="/dashboard"', 'href="/reports"', 'href="/analytics"', 'href="/about"'):
             assert link in html, f"{link} missing on {path}"
         assert 'aria-current="page"' in html
 
@@ -230,3 +230,11 @@ def test_reports_rows_link_to_replay(client):
     rec = client.post("/api/simulations", json={"vehicle_count": 12}).get_json()["record"]
     html = client.get("/reports").get_data(as_text=True)
     assert f'href="/?replay={rec["traffic_id"]}"' in html
+
+
+def test_dashboard_and_about_pages(client, app):
+    client.put("/api/rules", json={"low_max": 5, "medium_max": 30, "low_green": 10, "medium_green": 40, "high_green": 90})
+    dash = client.get("/dashboard")
+    assert dash.status_code == 200 and "Last 20 runs" in dash.get_data(as_text=True)
+    about = client.get("/about").get_data(as_text=True)
+    assert "31–50 vehicles" in about and "90 seconds" in about  # shows the live rules

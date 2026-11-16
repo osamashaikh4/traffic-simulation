@@ -13,13 +13,15 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% set nav = [('home', 'Home', 'home'), ('reports', 'Reports', 'reports')] %}
-{% if show_analytics %}{% set nav = nav + [('analytics', 'Analytics', 'analytics')] %}{% endif %}
+{% set nav = [('home', 'Simulation', 'play-circle'), ('dashboard', 'Dashboard', 'grid'), ('reports', 'History', 'history')] %}
+{% if show_analytics %}{% set nav = nav + [('analytics', 'Analytics', 'bars')] %}{% endif %}
+{% set nav = nav + [('about', 'About Project', 'info')] %}
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
-      <div class="workspace">
-        <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span class="workspace-name">Smart Traffic</span>
+      <div class="brand">
+        <span class="brand-car">{{ icon('car', 64) }}</span>
+        <span class="brand-name">Smart Traffic</span>
+        <span class="brand-sub">Monitoring &amp; Management</span>
         <button class="icon-btn collapse-btn" type="button" id="collapse-btn" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
           <span class="when-expanded">{{ icon('sidebar', 18) }}</span>
           <span class="when-collapsed">{{ icon('sidebar-open', 18) }}</span>
@@ -30,16 +32,35 @@
         {% for endpoint, label, ic in nav %}
           <a class="nav-item {% if request.endpoint == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}" title="{{ label }}"
              {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>
-            {{ icon(ic, 18) }}<span>{{ label }}</span>
+            {{ icon(ic, 22) }}<span>{{ label }}</span>
           </a>
         {% endfor %}
       </nav>
+      <div class="skyline" aria-hidden="true">
+        <svg viewBox="0 0 248 230" preserveAspectRatio="xMidYMax slice">
+          <defs>
+            <linearGradient id="sky-fade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity=".25"/>
+              <stop offset="1" stop-color="currentColor" stop-opacity=".95"/>
+            </linearGradient>
+          </defs>
+          <path fill="url(#sky-fade)" d="M0 230V150h14v-22h10v22h8V110h18v-8h6v8h6v120h4V92l12-12 12 12v138h6v-70h16V70h4V40h2v30h4v-14h6v14h4v160h6v-96h20v-12h12v108h8v-60h18v-24h10v24h6v60h10V160h14v70z"/>
+          <g fill="#3d64c8" opacity=".55">
+            <rect x="38" y="120" width="3" height="4"/><rect x="44" y="132" width="3" height="4"/><rect x="38" y="146" width="3" height="4"/>
+            <rect x="84" y="100" width="3" height="4"/><rect x="90" y="112" width="3" height="4"/><rect x="84" y="128" width="3" height="4"/><rect x="96" y="140" width="3" height="4"/>
+            <rect x="118" y="84" width="3" height="4"/><rect x="124" y="98" width="3" height="4"/><rect x="118" y="116" width="3" height="4"/><rect x="128" y="130" width="3" height="4"/>
+            <rect x="170" y="150" width="3" height="4"/><rect x="176" y="164" width="3" height="4"/><rect x="206" y="176" width="3" height="4"/><rect x="212" y="188" width="3" height="4"/>
+          </g>
+          <path fill="currentColor" opacity=".9" d="M0 230v-22c20-10 34 4 52-4s30-12 48-2 26 8 44 0 32-10 50-2 34 6 54-2v30z"/>
+        </svg>
+      </div>
     </aside>
     <div class="backdrop" data-close-sidebar></div>
 
     <div class="main">
       <header class="topbar">
-        <button class="icon-btn menu-btn" type="button" id="menu-btn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 18) }}</button>
+        <button class="icon-btn menu-btn" type="button" id="menu-btn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
+        <span class="page-icon" aria-hidden="true">{% block page_icon %}{% endblock %}</span>
         <div class="topbar-title">
           <h1>{% block heading %}{% endblock %}</h1>
           <span class="topbar-meta">{% block meta %}{% endblock %}</span>
@@ -55,7 +76,6 @@
   <script>
     (function () {
       const root = document.documentElement;
-      const sidebar = document.getElementById("sidebar");
       const menuBtn = document.getElementById("menu-btn");
       const setOpen = (open) => {
         root.classList.toggle("sidebar-open", open);

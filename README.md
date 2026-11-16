@@ -50,15 +50,18 @@ The table definition is in `schema.sql` if you prefer to create it by hand.
 
 ## Using the dashboard
 
-A sidebar links the pages. Everything (font and chart library) is served
+A dark navy dashboard. The sidebar links five pages: **Simulation**, **Dashboard**,
+**History**, **Analytics** and **About Project**. Everything (font and chart library) is served
 from `static/vendor/`, so it works offline.
 
-**Home** - the live junction.
-1. Click **Simulate traffic** (or press **S**). The browser generates a random
+**Simulation** (`/`) - the live junction.
+1. Click **Run Simulation** (or press **S**). The browser generates a random
    whole number from 0 to 50 and sends it to Flask, which validates it, applies
    the rules, saves the record and returns it. Type an exact value and press
    **Run** to test a specific count; type a **Label** to tag the run.
-2. The big numbers show vehicles, density and recommended green time.
+2. The cards on the right show generated vehicles, traffic density and the
+   recommended green time, with a one-line explanation. The *System Ready*
+   badge turns to *Simulating* during a run and *Database Offline* if MySQL is down.
 3. The junction (top-down, left-hand traffic as in Bangladesh) plays the run:
    the vehicles queue on the highlighted west road, its light turns green for
    the recommended time, and they drive through. A big signal shows the light
@@ -74,13 +77,18 @@ from `static/vendor/`, so it works offline.
 6. Each run is generated from its record number, so **replaying** a run (click
    a bar in *Last 20 runs*, *Replay* in Recent results or on Reports) shows
    exactly the same vehicles and result. Replays are not saved again.
-7. **Rules** shows the active bands (Edit to change them); **Recent results**
-   shows the latest 3 runs.
+7. **Traffic Rules Reference** shows the active bands (Edit to change them).
+
+**Dashboard** (`/dashboard`) - totals per density, the *Last 20 runs* chart
+(click a bar to replay) and the latest results.
+
+**About Project** (`/about`) - what the prototype does, how it works, the
+current rules, and what is in and out of scope.
 
 The animation assumes roughly one vehicle every 2 seconds per lane once
 moving; it is an illustration, not a calibrated traffic model.
 
-**Reports** - every saved run, newest first, with Low / Medium / High
+**History** (`/reports`) - every saved run, newest first, with Low / Medium / High
 filters, 20 rows per page by default (10, 20, 50 or 100 selectable),
 **Export CSV** (downloads the records matching the current filter; opens in
 Excel) and a button to clear all records.

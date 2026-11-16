@@ -25,7 +25,8 @@ from validation import (ValidationError, parse_rule_config, parse_scenario_label
 
 DENSITY_LEVELS = ("Low", "Medium", "High")
 RECENT_LIMIT = 3          # results shown on the home page
-HOME_CHART_RUNS = 20      # runs shown on the home page chart
+HOME_CHART_RUNS = 20      # runs shown on the dashboard chart
+DASHBOARD_RECENT = 8      # results listed on the dashboard
 PAGE_SIZES = (10, 20, 50, 100)
 DEFAULT_PAGE_SIZE = 20
 ANALYTICS_RUNS = 50       # runs shown on the "count per run" chart
@@ -93,6 +94,16 @@ def create_app(config=None):
             min_count=MIN_COUNT, max_count=MAX_COUNT, green_min=GREEN_MIN, green_max=GREEN_MAX,
             recent_limit=RECENT_LIMIT, chart_runs=HOME_CHART_RUNS,
         )
+
+    @app.get("/dashboard")
+    def dashboard():
+        return render_template("dashboard.html", rules=rules_as_dicts(db.get_rules()),
+                               recent_limit=DASHBOARD_RECENT, chart_runs=HOME_CHART_RUNS)
+
+    @app.get("/about")
+    def about():
+        return render_template("about.html", rules=rules_as_dicts(db.get_rules()),
+                               min_count=MIN_COUNT, max_count=MAX_COUNT)
 
     def density_filter():
         density = request.args.get("density") or None
