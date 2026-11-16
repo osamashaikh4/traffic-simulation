@@ -63,8 +63,6 @@ body { background: var(--page-bg); }
 .sidebar .nav-link:hover { color: #fff; background: var(--sidebar-active); }
 .sidebar .nav-link.active { color: #fff; background: #2563eb; }
 
-.sidebar-foot { margin-top: auto; font-size: .75rem; color: #64748b; padding: 1rem .5rem 0; }
-
 /* ---- Density colours (text label always accompanies colour) ------------ */
 .density-low    { background: var(--low); color: #fff; }
 .density-medium { background: var(--medium); color: #1f1300; }
