@@ -24,8 +24,8 @@
   const H = 560;
   const ROAD = { hTop: 238, hBot: 322, hMid: 280, vLeft: 758, vRight: 842, vMid: 800 };
   const SIDEWALK = 12;
-  // The part of the world shown: a close-up centred on the junction.
-  const VIEW = { x: 540, y: 80, w: 520, h: 400 };
+  // The part of the world shown: a close-up centred on the junction (like the design mockup).
+  const VIEW = { x: 652, y: 170, w: 296, h: 220 };
   const METRES_PER_UNIT = 0.15;
 
   const GEOM = {
@@ -43,7 +43,7 @@
   ];
 
   const TYPES = {
-    car: { name: "Car", len: 21, w: 12, v0: 90, colors: ["#2f7bf6", "#2f7bf6", "#f2c230", "#e0453a", "#eef1f5", "#eef1f5", "#b9c2cf", "#2b313c"] },
+    car: { name: "Car", len: 22, w: 13, v0: 90, colors: ["#2f7bf6", "#2f7bf6", "#f2c230", "#e0453a", "#eef1f5", "#eef1f5", "#b9c2cf", "#2b313c"] },
     cng: { name: "CNG auto-rickshaw", len: 16, w: 11, v0: 80, colors: ["#15803d"] },
     bus: { name: "Bus", len: 36, w: 13, v0: 75, colors: ["#b42318", "#1d4ed8", "#c2410c", "#047857"] },
   };
@@ -344,14 +344,14 @@
       const by = y + Math.sin(ang) * r * 0.45;
       const br = r * (0.55 + ((t.seed * 97 + i * 13) % 10) / 40);
       const g = ctx.createRadialGradient(bx - br * 0.4, by - br * 0.4, br * 0.1, bx, by, br);
-      g.addColorStop(0, "#8cc461");
-      g.addColorStop(0.55, "#4f8f38");
-      g.addColorStop(1, "#2a5a22");
+      g.addColorStop(0, "#6fae48");
+      g.addColorStop(0.5, "#357a2b");
+      g.addColorStop(1, "#1b4a1a");
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
     }
     const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.05, x, y, r * 0.7);
-    g.addColorStop(0, "#9fd36f");
+    g.addColorStop(0, "rgba(150,210,105,.75)");
     g.addColorStop(1, "rgba(79,143,56,0)");
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(x, y, r * 0.7, 0, Math.PI * 2); ctx.fill();
@@ -360,8 +360,8 @@
   function drawBackground(ctx) {
     // Grass
     const grass = ctx.createLinearGradient(0, 0, W, H);
-    grass.addColorStop(0, "#4b8a3a");
-    grass.addColorStop(1, "#3f7a31");
+    grass.addColorStop(0, "#5c9a3f");
+    grass.addColorStop(1, "#4d8a35");
     ctx.fillStyle = grass;
     ctx.fillRect(0, 0, W, H);
     for (const s of CITY.speckles) {
@@ -411,9 +411,6 @@
     line(ctx, ROAD.vRight, 0, ROAD.vRight, H);
     ctx.restore();
 
-    // The simulated approach: a faint blue wash so the eye goes there first.
-    ctx.fillStyle = "rgba(47,107,255,.14)";
-    ctx.fillRect(0, ROAD.hTop, 732, ROAD.hMid - ROAD.hTop - 1);
 
     // Lane markings (outside the junction box)
     ctx.save();
@@ -489,23 +486,40 @@
     body.addColorStop(0.65, v.color);
     body.addColorStop(1, shade(v.color, -0.18));
     ctx.fillStyle = body;
-    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 3 : 5); ctx.fill();
+    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 3 : v.type === "car" ? w * 0.42 : 5); ctx.fill();
 
     const glass = "rgba(18,28,44,.92)";
     if (v.type === "car") {
-      // windscreen, roof, rear window
-      ctx.fillStyle = glass;
+      // tinted windscreen
+      const ws = ctx.createLinearGradient(-10.5, 0, -5.5, 0);
+      ws.addColorStop(0, "#1a2638");
+      ws.addColorStop(1, "#58779b");
+      ctx.fillStyle = ws;
       ctx.beginPath();
-      ctx.moveTo(-5.2, -w / 2 + 1.6); ctx.lineTo(-9.5, -w / 2 + 2.6); ctx.lineTo(-9.5, w / 2 - 2.6); ctx.lineTo(-5.2, w / 2 - 1.6);
+      ctx.moveTo(-5.4, -w / 2 + 1.8); ctx.lineTo(-10.4, -w / 2 + 2.4); ctx.lineTo(-10.4, w / 2 - 2.4); ctx.lineTo(-5.4, w / 2 - 1.8);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(v.color, 0.16);
-      roundRect(ctx, -15.5, -w / 2 + 2.4, 6, w - 4.8, 2); ctx.fill();
-      ctx.fillStyle = glass;
-      roundRect(ctx, -18.6, -w / 2 + 2.6, 3, w - 5.2, 1.5); ctx.fill();
+      // side windows
+      ctx.fillStyle = "rgba(20,30,46,.85)";
+      ctx.fillRect(-16.4, -w / 2 + 1.3, 6, 1.1);
+      ctx.fillRect(-16.4, w / 2 - 2.4, 6, 1.1);
+      // roof with a highlight
+      const roof = ctx.createLinearGradient(0, -w / 2 + 2.6, 0, w / 2 - 2.6);
+      roof.addColorStop(0, shade(v.color, 0.22));
+      roof.addColorStop(1, shade(v.color, 0.02));
+      ctx.fillStyle = roof;
+      roundRect(ctx, -16.4, -w / 2 + 2.6, 6, w - 5.2, 2.2); ctx.fill();
+      // rear window
+      ctx.fillStyle = "#1c2a3d";
+      ctx.beginPath();
+      ctx.moveTo(-16.4, -w / 2 + 2.6); ctx.lineTo(-19.2, -w / 2 + 3.2); ctx.lineTo(-19.2, w / 2 - 3.2); ctx.lineTo(-16.4, w / 2 - 2.6);
+      ctx.closePath(); ctx.fill();
+      // bonnet shine
+      ctx.fillStyle = "rgba(255,255,255,.18)";
+      roundRect(ctx, -4.6, -w / 2 + 2.4, 3.2, w - 4.8, 1.5); ctx.fill();
       // mirrors
-      ctx.fillStyle = shade(v.color, -0.2);
-      ctx.fillRect(-7.5, -w / 2 - 1.2, 2, 1.4);
-      ctx.fillRect(-7.5, w / 2 - 0.2, 2, 1.4);
+      ctx.fillStyle = shade(v.color, -0.22);
+      ctx.fillRect(-8.2, -w / 2 - 1.3, 2.2, 1.5);
+      ctx.fillRect(-8.2, w / 2 - 0.2, 2.2, 1.5);
     } else if (v.type === "cng") {
       ctx.fillStyle = "#13261b";
       roundRect(ctx, -len + 1.6, -w / 2 + 0.9, len - 5.6, w - 1.8, 4); ctx.fill();
@@ -562,31 +576,31 @@
 
   // A signal head on a pole at a corner: three lamps, the lit one glowing.
   function drawSignal(ctx, x, y, state) {
-    const w = 15;
-    const h = 40;
+    const w = 11;
+    const h = 29;
     ctx.fillStyle = "rgba(0,0,0,.35)";
-    roundRect(ctx, x + 3, y + 4, w, h, 5); ctx.fill();
+    roundRect(ctx, x + 2.5, y + 3, w, h, 4); ctx.fill();
     ctx.fillStyle = "#11151c";
-    roundRect(ctx, x, y, w, h, 5); ctx.fill();
+    roundRect(ctx, x, y, w, h, 4); ctx.fill();
     ctx.strokeStyle = "#2a313d";
-    ctx.lineWidth = 1;
-    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 5); ctx.stroke();
+    ctx.lineWidth = 0.8;
+    roundRect(ctx, x + 0.4, y + 0.4, w - 0.8, h - 0.8, 4); ctx.stroke();
     ["red", "amber", "green"].forEach((c, i) => {
       const cx = x + w / 2;
-      const cy = y + 7.5 + i * 12.5;
+      const cy = y + 5.5 + i * 9;
       const on = state === c;
       if (on) {
-        const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, 14);
+        const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, 10);
         g.addColorStop(0, LAMP[c] + "cc");
         g.addColorStop(1, LAMP[c] + "00");
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI * 2); ctx.fill();
       }
       ctx.fillStyle = on ? LAMP[c] : "#2b313b";
-      ctx.beginPath(); ctx.arc(cx, cy, 4.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 3.3, 0, Math.PI * 2); ctx.fill();
       if (on) {
         ctx.fillStyle = "rgba(255,255,255,.55)";
-        ctx.beginPath(); ctx.arc(cx - 1.4, cy - 1.4, 1.4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx - 1, cy - 1, 1, 0, Math.PI * 2); ctx.fill();
       }
     });
   }
@@ -632,7 +646,7 @@
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", opts.ariaLabel || "Animated top-down view of the junction");
     const label = el("div", "jx-label");
-    // Big signal + countdown (top left) and a vehicles-through counter (top right).
+    // Live bar under the map: signal + countdown, vehicles through, vehicles waiting.
     const signal = el("div", "jx-signal",
       '<div class="jx-lights"><i data-c="red"></i><i data-c="amber"></i><i data-c="green"></i></div>' +
       '<div class="jx-seconds num"></div>');
@@ -643,16 +657,20 @@
       '<b class="jx-through">0</b><span class="jx-total"></span><span class="jx-badge"></span></div>' +
       '<div class="jx-bar"><span></span></div>');
     counter.dataset.state = "idle";
+    const waiting = el("div", "jx-wait", '<b class="num">0</b><span>waiting</span>');
+    const live = el("div", "jx-live");
+    live.append(signal, counter, waiting);
     const tip = el("div", "jx-tip");
     tip.hidden = true;
-    box.append(canvas, label, signal, counter, tip);
-    container.append(box);
+    box.append(canvas, label, tip);
+    container.append(box, live);
 
     const q = (node, sel) => node.querySelector(sel);
     const ui = {
       seconds: q(signal, ".jx-seconds"),
       through: q(counter, ".jx-through"), total: q(counter, ".jx-total"),
       badge: q(counter, ".jx-badge"), bar: q(counter, ".jx-bar span"),
+      waiting: q(waiting, "b"),
     };
 
     const ctx = canvas.getContext("2d");
@@ -673,7 +691,7 @@
     function fit() {
       const full = container.closest(":fullscreen") !== null;
       const availW = container.clientWidth;
-      const availH = full ? container.clientHeight : availW * (VIEW.h / VIEW.w);
+      const availH = full ? container.clientHeight - live.offsetHeight : availW * (VIEW.h / VIEW.w);
       let w = availW;
       let h = w * (VIEW.h / VIEW.w);
       if (h > availH) { h = availH; w = h * (VIEW.w / VIEW.h); }
@@ -728,13 +746,12 @@
       }
 
       const { main, cross } = model.state;
-      drawSignal(ctx, 735, 178, main);    // west approach (simulated), on its left kerb
-      drawSignal(ctx, 850, 342, main);    // east approach
-      drawSignal(ctx, 852, 176, cross);   // north approach
-      drawSignal(ctx, 733, 344, cross);   // south approach
+      drawSignal(ctx, 740, 192, main);    // NW corner: west approach (simulated)
+      drawSignal(ctx, 849, 339, main);    // SE corner: east approach
+      drawSignal(ctx, 849, 192, cross);   // NE corner: north approach
+      drawSignal(ctx, 740, 339, cross);   // SW corner: south approach
 
       const info = model.info();
-      drawQueueMarkers(info);
 
       if (scene === "rain") drawRain(realDt);
       updateOverlays(info);
@@ -794,6 +811,7 @@
       set(ui.total, "total", blank ? "" : `/ ${total}`);
       set(ui.badge, "badge", state === "ok" ? "\u2713" : state === "bad" ? `\u2717 ${r.remaining}` : "");
       if (cache.state !== state) { cache.state = state; counter.dataset.state = state; }
+      set(ui.waiting, "waiting", String(r ? r.remaining : info.waiting));
       const pct = `${total ? Math.round((through / total) * 1000) / 10 : state === "ok" ? 100 : 0}%`;
       if (cache.bar !== pct) { cache.bar = pct; ui.bar.style.width = pct; }
       void PHASE_TEXT;
