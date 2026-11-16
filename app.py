@@ -60,8 +60,8 @@ def density_totals():
 def create_app(config=None):
     app = Flask(__name__)
     app.config.update(db.config_from_env())
-    # Analytics is hidden until it is ready to show. Set SHOW_ANALYTICS=1 to enable it.
-    app.config["SHOW_ANALYTICS"] = os.environ.get("SHOW_ANALYTICS", "0") == "1"
+    # The Analytics page is shown by default. Set SHOW_ANALYTICS=0 to hide it.
+    app.config["SHOW_ANALYTICS"] = os.environ.get("SHOW_ANALYTICS", "1") == "1"
     if config:
         app.config.update(config)
 
@@ -163,6 +163,13 @@ def create_app(config=None):
         limit = min(max(request.args.get("limit", 50, type=int), 1), 500)
         records = [serialize(r) for r in db.list_records(limit)]
         return jsonify(records=records, totals=density_totals())
+
+    @app.get("/api/simulations/<int:traffic_id>")
+    def get_simulation(traffic_id):
+        record = db.get_record(traffic_id)
+        if record is None:
+            return jsonify(error=f"Run #{traffic_id} was not found."), 404
+        return jsonify(record=serialize(record))
 
     @app.delete("/api/simulations")
     def clear_simulations():

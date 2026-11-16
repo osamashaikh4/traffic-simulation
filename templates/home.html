@@ -4,90 +4,63 @@
 {% block heading %}Home{% endblock %}
 
 {% block content %}
-  <!-- Run a simulation (UC1) -->
-  <section class="panel" aria-labelledby="run-heading">
-    <div class="panel-head"><h2 id="run-heading">Run simulation</h2>
-      <div class="head-controls">
-        <label class="inline-field" for="speed">Speed
-          <select id="speed" class="select">
-            <option value="1">1×</option>
-            <option value="2" selected>2×</option>
-            <option value="4">4×</option>
-            <option value="8">8×</option>
-            <option value="0">Skip animation</option>
-          </select>
+  <!-- Live junction: the centre of the page (UC1 + FR5) -->
+  <section class="panel stage-panel" id="stage-panel" aria-label="Traffic simulation">
+    <div class="stage-toolbar">
+      <button id="simulate-btn" class="btn btn-primary btn-lg" aria-keyshortcuts="S">{{ icon('play', 14) }} Simulate traffic</button>
+      <form id="manual-form" class="manual" novalidate>
+        <input id="manual-count" class="input num" inputmode="numeric" autocomplete="off"
+               placeholder="{{ min_count }}–{{ max_count }}" aria-label="Manual test value (0 to 50)" aria-describedby="manual-error">
+        <button type="submit" class="btn">Run</button>
+      </form>
+      <input id="scenario-label" class="input label-input" maxlength="50" placeholder="Label" aria-label="Label (optional)" autocomplete="off">
+
+      <div class="toolbar-right">
+        <div class="seg" role="radiogroup" aria-label="Speed" id="speed-seg">
+          <button type="button" role="radio" data-speed="1" title="Real time">1×</button>
+          <button type="button" role="radio" data-speed="2" title="2× speed">2×</button>
+          <button type="button" role="radio" data-speed="4" title="4× speed">4×</button>
+          <button type="button" role="radio" data-speed="8" title="8× speed">8×</button>
+          <button type="button" role="radio" data-speed="0" title="Skip animation" aria-label="Skip animation">{{ icon('skip', 15) }}</button>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Scene" id="scene-seg">
+          <button type="button" role="radio" data-scene="day" title="Day" aria-label="Day">{{ icon('sun', 16) }}</button>
+          <button type="button" role="radio" data-scene="night" title="Night" aria-label="Night">{{ icon('moon', 16) }}</button>
+          <button type="button" role="radio" data-scene="rain" title="Rain" aria-label="Rain">{{ icon('rain', 16) }}</button>
+        </div>
+        <button id="compare-btn" class="btn toggle" type="button" aria-pressed="false" title="Compare with a fixed signal plan">{{ icon('compare', 16) }} Compare</button>
+        <label class="fixed-input" id="fixed-wrap" hidden title="Fixed plan green time">
+          {{ icon('lock', 14) }}<input id="fixed-green" class="input num" inputmode="numeric" value="30" aria-label="Fixed plan green time in seconds"><span>s</span>
         </label>
-        <button id="auto-btn" class="btn" type="button" aria-pressed="false">
-          <span class="auto-off">{{ icon('repeat', 16) }} Auto simulate</span>
-          <span class="auto-on">{{ icon('stop', 14) }} Stop auto <span class="auto-count num" id="auto-count"></span></span>
+        <button id="auto-btn" class="btn toggle" type="button" aria-pressed="false" title="Run simulations automatically">
+          <span class="auto-off">{{ icon('repeat', 16) }} Auto</span>
+          <span class="auto-on">{{ icon('stop', 14) }} Stop <span class="num" id="auto-count"></span></span>
         </button>
+        <button id="fullscreen-btn" class="btn icon-only" type="button" title="Full screen (F)" aria-label="Full screen">{{ icon('expand', 16) }}</button>
       </div>
     </div>
-    <div class="panel-body">
-      <div class="run-row">
-        <div class="field field-grow">
-          <label for="scenario-label">Label</label>
-          <input id="scenario-label" class="input" maxlength="50" placeholder="e.g. Test Run 1" autocomplete="off">
-        </div>
-        <form id="manual-form" class="field" novalidate>
-          <label for="manual-count">Manual test value</label>
-          <div class="manual">
-            <input id="manual-count" class="input num" inputmode="numeric" autocomplete="off"
-                   placeholder="{{ min_count }}–{{ max_count }}" aria-describedby="manual-error">
-            <button type="submit" class="btn">Run</button>
-          </div>
-        </form>
-        <span class="divider" aria-hidden="true"></span>
-        <button id="simulate-btn" class="btn btn-primary btn-lg" aria-keyshortcuts="S">
-          {{ icon('play', 14) }} Simulate traffic
-        </button>
-      </div>
-      <div id="manual-error" class="field-error" role="alert"></div>
-      <div id="request-error" class="callout" role="alert" hidden style="margin-top:14px">{{ icon('alert') }}<span></span></div>
-    </div>
-  </section>
+    <div id="manual-error" class="field-error toolbar-error" role="alert"></div>
+    <div id="request-error" class="callout toolbar-error" role="alert" hidden>{{ icon('alert') }}<span></span></div>
 
-  <!-- Current result (FR5) -->
-  <section class="panel" aria-labelledby="result-heading">
-    <div class="panel-head"><h2 id="result-heading">Current result</h2></div>
-    <div class="metrics" id="result-metrics">
-      <div class="metric">
-        <div class="metric-label">Vehicle count</div>
-        <div class="metric-value" id="result-count">–</div>
-        <div class="metric-sub">vehicles in sample observation</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Traffic density</div>
-        <div class="metric-value" id="result-density-wrap"><span class="big-dot" aria-hidden="true"></span><span id="result-density">–</span></div>
-        <div class="metric-sub" id="result-range">&nbsp;</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Recommended green time</div>
-        <div class="metric-value">
-          <span id="result-green">–</span>
-          <span class="signal" aria-hidden="true"><span class="lamp red on"></span><span class="lamp amber"></span><span class="lamp green"></span></span>
-        </div>
-        <div class="metric-sub">recommendation only</div>
-      </div>
+    <!-- The result in three big numbers -->
+    <div class="result-strip" id="result-metrics" aria-live="polite">
+      <div class="r-cell"><span class="r-label">Vehicles</span><span class="r-value num" id="result-count">–</span></div>
+      <div class="r-cell"><span class="r-label">Density</span><span class="r-value" id="result-density-wrap"><span class="big-dot" aria-hidden="true"></span><span id="result-density">–</span></span></div>
+      <div class="r-cell"><span class="r-label">Green time</span><span class="r-value num" id="result-green">–</span></div>
+      <div class="r-cell r-replay" id="replay-tag" hidden>{{ icon('replay', 15) }} <span id="replay-text"></span></div>
     </div>
-    <div class="panel-foot"><span id="result-explanation" class="explain">Press <strong>Simulate traffic</strong> to generate a sample vehicle count.</span></div>
-  </section>
 
-  <!-- Junction view -->
-  <section class="panel" aria-labelledby="junction-heading">
-    <div class="panel-head"><h2 id="junction-heading">Junction view</h2>
-      <span class="sub">Simulated approach from the west · traffic drives on the left</span></div>
-    <div class="hud" aria-live="polite">
-      <div class="hud-cell"><div class="metric-label">Signal</div>
-        <div class="hud-value"><span class="phase-dot" id="hud-phase-dot" data-signal="red" aria-hidden="true"></span><span id="hud-phase">Waiting for a simulation</span></div></div>
-      <div class="hud-cell"><div class="metric-label">Time left</div><div class="hud-value num" id="hud-countdown">–</div></div>
-      <div class="hud-cell"><div class="metric-label">Waiting</div><div class="hud-value num" id="hud-waiting">0</div></div>
-      <div class="hud-cell"><div class="metric-label">Got through</div><div class="hud-value num" id="hud-cleared">–</div></div>
+    <div class="stages" id="stages">
+      <div class="stage" id="stage-smart"></div>
+      <div class="stage" id="stage-fixed" hidden></div>
     </div>
-    <div class="junction-wrap">
-      <canvas id="junction" role="img" aria-label="Animated top-down view of the junction: the simulated queue waits on the west approach and drives through during the recommended green time"></canvas>
+
+    <!-- Fixed vs smart verdict -->
+    <div class="verdict" id="verdict" hidden>
+      <div class="v-side" id="v-fixed"></div>
+      <div class="v-mid" id="v-mid"></div>
+      <div class="v-side" id="v-smart"></div>
     </div>
-    <div class="panel-foot">Illustrative animation: assumes roughly one vehicle every 2 seconds per lane once moving. Other roads carry background traffic.</div>
   </section>
 
   <!-- Recent runs chart -->
@@ -98,8 +71,8 @@
       </span>
     </div>
     <div class="panel-body">
-      <div class="chart-box short" id="runs-chart-box"><canvas id="runs-chart" role="img" aria-label="Bar chart of vehicle count for the latest simulation runs"></canvas></div>
-      <p class="chart-empty" id="runs-chart-empty" hidden>No simulations yet. Press <strong>Simulate traffic</strong> to see your runs here.</p>
+      <div class="chart-box short" id="runs-chart-box"><canvas id="runs-chart" role="img" aria-label="Bar chart of vehicle count for the latest simulation runs. Click a bar to replay that run."></canvas></div>
+      <p class="chart-empty" id="runs-chart-empty" hidden>No runs yet</p>
     </div>
   </section>
 
@@ -125,13 +98,13 @@
       <form id="rules-form" class="rules-form" hidden novalidate>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green time (s)</th></tr></thead>
+            <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green (s)</th></tr></thead>
             <tbody>
               <tr><td>{{ status('Low') }}</td><td class="num">{{ min_count }}</td>
-                <td><input class="input num" name="low_max" id="rule-low-max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
+                <td><input class="input num" name="low_max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
                 <td><input class="input num" name="low_green" inputmode="numeric" value="{{ rule_config.low_green }}" aria-label="Low green time in seconds"></td></tr>
               <tr><td>{{ status('Medium') }}</td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
-                <td><input class="input num" name="medium_max" id="rule-medium-max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
+                <td><input class="input num" name="medium_max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
                 <td><input class="input num" name="medium_green" inputmode="numeric" value="{{ rule_config.medium_green }}" aria-label="Medium green time in seconds"></td></tr>
               <tr><td>{{ status('High') }}</td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
                 <td class="num">{{ max_count }}</td>
@@ -142,12 +115,11 @@
         <div class="rules-form-foot">
           <div id="rules-error" class="field-error" role="alert"></div>
           <div class="rules-actions">
-            <button class="btn btn-ghost" type="button" id="rules-reset">Reset to defaults</button>
+            <button class="btn btn-ghost" type="button" id="rules-reset">Reset</button>
             <span class="spacer"></span>
             <button class="btn" type="button" id="rules-cancel">Cancel</button>
-            <button class="btn btn-primary" type="submit">Save rules</button>
+            <button class="btn btn-primary" type="submit">Save</button>
           </div>
-          <p class="hint-text">Green time: {{ green_min }}–{{ green_max }} seconds. New rules apply to the next simulation; saved results keep the values they were given.</p>
         </div>
       </form>
     </section>
@@ -158,9 +130,9 @@
         <a href="{{ url_for('reports') }}" class="link">View all {{ icon('arrow-right', 14) }}</a></div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>#</th><th>Scenario</th><th class="num">Count</th><th>Density</th><th class="num">Green</th><th>Saved</th></tr></thead>
+          <thead><tr><th>#</th><th>Label</th><th class="num">Count</th><th>Density</th><th class="num">Green</th><th>Saved</th><th></th></tr></thead>
           <tbody id="recent-body">
-            <tr><td colspan="6" class="empty">Loading…</td></tr>
+            <tr><td colspan="7" class="empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -172,6 +144,7 @@
   <script>
     window.TRAFFIC_RULES = {{ rules|tojson }};
     window.COUNT_RANGE = {min: {{ min_count }}, max: {{ max_count }}};
+    window.GREEN_RANGE = {min: {{ green_min }}, max: {{ green_max }}};
     window.RECENT_LIMIT = {{ recent_limit }};
     window.CHART_RUNS = {{ chart_runs }};
   </script>

@@ -37,7 +37,7 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>#</th><th>Scenario</th><th class="num">Vehicle count</th><th>Density</th><th class="num">Green time</th><th>Saved at</th></tr>
+          <tr><th>#</th><th>Label</th><th class="num">Vehicle count</th><th>Density</th><th class="num">Green time</th><th>Saved at</th><th></th></tr>
         </thead>
         <tbody>
         {% for r in records %}
@@ -48,9 +48,10 @@
             <td>{{ status(r.density_level) }}</td>
             <td class="num">{{ r.green_time_seconds }} s</td>
             <td class="time">{{ r.created_at }}</td>
+            <td class="row-action"><a class="replay-link" href="{{ url_for('home', replay=r.traffic_id) }}" title="Replay run #{{ r.traffic_id }} on the junction">{{ icon('replay', 15) }} Replay</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="empty">
+          <tr><td colspan="7" class="empty">
             {% if density %}No {{ density }} results yet.{% else %}No simulations saved yet. Run one from the <a href="{{ url_for('home') }}">Home</a> page.{% endif %}
           </td></tr>
         {% endfor %}

@@ -120,6 +120,12 @@ def insert_record(scenario_label, vehicle_count, density_level, green_time_secon
         return cur.fetchone()
 
 
+def get_record(traffic_id):
+    with get_db().cursor() as cur:
+        cur.execute("SELECT * FROM traffic_records WHERE traffic_id = %s", (traffic_id,))
+        return cur.fetchone()
+
+
 def list_records(limit=50, offset=0, density=None):
     """Newest first, optionally filtered by density level."""
     where, params = ("WHERE density_level = %s", [density]) if density else ("", [])

@@ -53,29 +53,39 @@ The table definition is in `schema.sql` if you prefer to create it by hand.
 A sidebar links the pages. Everything (font and chart library) is served
 from `static/vendor/`, so it works offline.
 
-**Home** - run simulations.
-1. Optionally type a scenario label (e.g. "Test Run 1").
-2. Click **Simulate traffic** (or press **S**): the browser generates a random whole number
-   from 0 to 50 and sends it to Flask.
-3. Flask validates the value, applies the rules, saves the record and returns it.
-4. The three result figures show count, density and green time, with a sentence
-   explaining which rule was applied. The matching rule row is highlighted.
-5. **Junction view** animates the result: a top-down four-way junction
-   (left-hand traffic, as in Bangladesh) where the simulated count queues on
-   the west approach, gets the recommended green time, and drives through.
-   The strip above it shows the signal, time left, vehicles waiting and
-   vehicles that got through. Other roads carry background traffic.
-6. **Speed** sets the animation speed (1×–8×); *Skip animation* shows results
-   instantly. **Auto simulate** keeps running random simulations one after
-   another until stopped.
-7. **Last 20 runs** chart and **Recent results** (latest 3) update after each run.
+**Home** - the live junction.
+1. Click **Simulate traffic** (or press **S**). The browser generates a random
+   whole number from 0 to 50 and sends it to Flask, which validates it, applies
+   the rules, saves the record and returns it. Type an exact value and press
+   **Run** to test a specific count; type a **Label** to tag the run.
+2. The big numbers show vehicles, density and recommended green time.
+3. The junction (top-down, left-hand traffic as in Bangladesh) plays the run:
+   the vehicles queue on the highlighted west road, its light turns green for
+   the recommended time, and they drive through. A big signal shows the light
+   and the seconds left; the counter shows vehicles through, ending in a tick
+   (all through) or a cross with the number still waiting. Hover a vehicle to
+   see its type and speed. Other roads carry background traffic.
+4. Toolbar: **speed** 1x-8x or skip (instant result), **scene** day / night /
+   rain (visual only), **Compare**, **Auto** (back-to-back random runs),
+   and **full screen** (or press **F**) for presenting.
+5. **Compare** plays the same queue twice: once with the rule's green time
+   (Smart) and once with a fixed green time you choose (Fixed, default 30 s),
+   then shows vehicles through, vehicles left waiting and unused green for each.
+6. Each run is generated from its record number, so **replaying** a run (click
+   a bar in *Last 20 runs*, *Replay* in Recent results or on Reports) shows
+   exactly the same vehicles and result. Replays are not saved again.
+7. **Rules** shows the active bands (Edit to change them); **Recent results**
+   shows the latest 3 runs.
+
+The animation assumes roughly one vehicle every 2 seconds per lane once
+moving; it is an illustration, not a calibrated traffic model.
 
 **Reports** - every saved run, newest first, with Low / Medium / High
 filters, 20 rows per page by default (10, 20, 50 or 100 selectable),
 **Export CSV** (downloads the records matching the current filter; opens in
 Excel) and a button to clear all records.
 
-**Analytics** (hidden for now - start the app with `SHOW_ANALYTICS=1` to show it) - summary figures (total runs, average count, average green
+**Analytics** (set `SHOW_ANALYTICS=0` to hide it) - summary figures (total runs, average count, average green
 time, count range) and three charts: vehicle count per run (latest 50, with
 the rule boundaries marked), runs by density, and the vehicle-count
 distribution.
@@ -108,6 +118,7 @@ tests/           Automated tests for report chapter 5
 | GET    | `/reports/export.csv?density=High` | CSV download of all matching records |
 | GET    | `/analytics` | Analytics page |
 | POST   | `/api/simulations` | Body `{"vehicle_count": 40, "scenario_label": "optional"}` → 201 with saved record, or 400 with `error` |
+| GET    | `/api/simulations/<id>` | One saved run (used for replays) |
 | GET    | `/api/simulations?limit=3` | Latest records (newest first, default 50) and totals per density |
 | GET    | `/api/analytics` | Summary figures, density totals, latest 50 runs and count distribution |
 | DELETE | `/api/simulations` | Clear all records |

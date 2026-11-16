@@ -1,13 +1,14 @@
-// Home page: run simulations, animate them on the junction view, auto mode,
-// edit the rules, and show the latest results.
-// The browser generates the sample count; the Flask backend validates it,
-// applies the rules, saves it to MySQL and returns the stored record.
+// Home page: run simulations and play them on the junction, compare with a
+// fixed signal plan, replay earlier runs, auto mode, rules editor, and the
+// latest results. The browser generates the sample count; the Flask backend
+// validates it, applies the rules, saves it to MySQL and returns the record.
 
 (function () {
   "use strict";
 
   const { renderRecordRows, getJSON, showError, colors, cssVar, boundaryLines, statusEl } = window.Traffic;
   const RANGE = window.COUNT_RANGE;
+  const GREEN = window.GREEN_RANGE;
   const rules = () => window.TRAFFIC_RULES; // replaced when the rules are edited
 
   const el = (id) => document.getElementById(id);
@@ -16,22 +17,49 @@
   const manualInput = el("manual-count");
   const manualError = el("manual-error");
   const labelInput = el("scenario-label");
-  const speedSelect = el("speed");
   const autoBtn = el("auto-btn");
+  const compareBtn = el("compare-btn");
+  const fixedInput = el("fixed-green");
+  const stagePanel = el("stage-panel");
 
-  const junction = window.Junction.create(el("junction"), {
-    phase: el("hud-phase"),
-    phaseDot: el("hud-phase-dot"),
-    countdown: el("hud-countdown"),
-    waiting: el("hud-waiting"),
-    cleared: el("hud-cleared"),
-  });
+  // Small per-browser preferences (speed, scene, compare).
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem("sim-prefs")) || {}; } catch (e) { return {}; } })();
+  const savePrefs = () => { try { localStorage.setItem("sim-prefs", JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
 
-  let busy = false;        // a request or an animated signal cycle is in progress
+  let speed = prefs.speed ?? 2;
+  let scene = prefs.scene || "day";
+  let compare = !!prefs.compare;
+  let busy = false;
   let autoRunning = false;
   let autoRuns = 0;
 
-  // ---- Simulation ----------------------------------------------------------
+  // ---- Junction views ----------------------------------------------------------
+
+  const smart = window.Junction.create(el("stage-smart"));
+  let fixed = null;
+  const views = () => (compare && fixed ? [smart, fixed] : [smart]);
+
+  function ensureFixedView() {
+    if (!fixed) fixed = window.Junction.create(el("stage-fixed"));
+    fixed.setSpeed(speed || 32);
+    fixed.setScene(scene);
+  }
+
+  function fixedGreen() {
+    const n = parseInt(fixedInput.value, 10);
+    const value = Number.isFinite(n) ? Math.min(GREEN.max, Math.max(GREEN.min, n)) : 30;
+    fixedInput.value = value;
+    return value;
+  }
+
+  function setLabels(smartGreen) {
+    if (!compare) { smart.setLabel(""); return; }
+    smart.setLabel(smartGreen ? `SMART · ${smartGreen} s` : "SMART");
+    smart.element.querySelector(".jx-label").classList.add("smart");
+    fixed.setLabel(`FIXED · ${fixedGreen()} s`);
+  }
+
+  // ---- Running a simulation ---------------------------------------------------------
 
   // Whole number from RANGE.min to RANGE.max inclusive (FR2).
   function generateVehicleCount() {
@@ -55,10 +83,7 @@
     return { value };
   }
 
-  const speed = () => Number(speedSelect.value);
-
-  // Saves one simulation, shows it, then plays its signal cycle on the junction.
-  // Resolves with the saved record, or null if the request failed.
+  // Saves one simulation and plays it. Resolves with the record, or null on error.
   async function runSimulation(vehicleCount) {
     showError("");
     setBusy(true);
@@ -68,11 +93,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vehicle_count: vehicleCount, scenario_label: labelInput.value }),
       });
-      const rec = body.record;
-      showResult(rec);
       loadRecent();
-      if (speed() > 0) await junction.play(rec.vehicle_count, rec.green_time_seconds);
-      return rec;
+      await playRecord(body.record, false);
+      return body.record;
     } catch (err) {
       showError(err.message);
       return null;
@@ -81,32 +104,91 @@
     }
   }
 
-  function showResult(rec) {
-    const rule = rules().find((r) => r.density === rec.density_level);
+  // Plays a saved record on the junction (and the fixed plan when comparing).
+  // The run's id is the seed, so a replay shows exactly the same vehicles.
+  async function playRecord(rec, isReplay) {
+    showResult(rec, isReplay);
+    el("verdict").hidden = true;
+    const count = rec.vehicle_count;
+    const seed = rec.traffic_id;
+    if (compare) ensureFixedView();
+    setLabels(rec.green_time_seconds);
+
+    let smartRes;
+    let fixedRes;
+    if (speed > 0) {
+      const runs = [smart.play(count, rec.green_time_seconds, seed)];
+      if (compare) runs.push(fixed.play(count, fixedGreen(), seed));
+      [smartRes, fixedRes] = await Promise.all(runs);
+    } else {
+      smartRes = window.Junction.runInstant(count, rec.green_time_seconds, seed);
+      smart.showResult(smartRes);
+      if (compare) {
+        fixedRes = window.Junction.runInstant(count, fixedGreen(), seed);
+        fixed.showResult(fixedRes);
+      }
+    }
+    if (compare && smartRes && fixedRes && !smartRes.interrupted && !fixedRes.interrupted) {
+      renderVerdict(fixedRes, smartRes);
+    }
+  }
+
+  async function replay(id) {
+    if (busy || autoRunning) return;
+    showError("");
+    setBusy(true);
+    try {
+      const body = await getJSON(`/api/simulations/${id}`);
+      stagePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      await playRecord(body.record, true);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function showResult(rec, isReplay) {
     el("result-count").textContent = rec.vehicle_count;
-
     el("result-density").textContent = rec.density_level;
-    el("result-density-wrap").className = `metric-value density-${rec.density_level.toLowerCase()}`;
-    el("result-range").textContent = `Range ${rule.min}–${rule.max} vehicles`;
-
+    el("result-density-wrap").className = `r-value density-${rec.density_level.toLowerCase()}`;
     el("result-green").innerHTML = `${rec.green_time_seconds}<span class="unit"> s</span>`;
-
-    el("result-explanation").innerHTML =
-      `Vehicle count <strong>${rec.vehicle_count}</strong> is within ` +
-      `<strong>${rule.min}–${rule.max}</strong>, so the density is ` +
-      `<strong>${rec.density_level}</strong> and the recommended green time is ` +
-      `<strong>${rec.green_time_seconds} seconds</strong>. Saved as record #${rec.traffic_id}.`;
-
+    el("replay-tag").hidden = !isReplay;
+    el("replay-text").textContent = isReplay ? `#${rec.traffic_id}` : "";
     highlightRule(rec.density_level);
 
-    const metrics = el("result-metrics");
-    metrics.classList.remove("flash");
-    void metrics.offsetWidth; // restart animation
-    metrics.classList.add("flash");
+    const strip = el("result-metrics");
+    strip.classList.remove("flash");
+    void strip.offsetWidth; // restart animation
+    strip.classList.add("flash");
+  }
 
-    // Illustrative only: the signal head turns green to show a recommendation exists.
-    document.querySelectorAll(".signal .lamp").forEach((l) => l.classList.remove("on"));
-    document.querySelector(".signal .lamp.green").classList.add("on");
+  function renderVerdict(f, s) {
+    const side = (title, r) => {
+      const ok = r.remaining === 0;
+      const sub = r.target === 0 ? "no vehicles" : ok ? (r.unusedGreen > 0 ? `${r.unusedGreen} s green unused` : "green fully used") : `${r.remaining} still waiting`;
+      return `<span class="v-title">${title} · ${r.green} s</span>` +
+        `<span class="v-big ${ok ? "v-ok" : "v-bad"}">${ok ? "✓" : "✗"} ${r.cleared}<small>/ ${r.target}</small></span>` +
+        `<span class="v-sub">${sub}</span>`;
+    };
+    el("v-fixed").innerHTML = side("Fixed", f);
+    el("v-smart").innerHTML = side("Smart", s);
+
+    const mid = el("v-mid");
+    let text = "Same result";
+    let cls = "";
+    if (s.cleared !== f.cleared) {
+      const d = s.cleared - f.cleared;
+      text = `${d > 0 ? "+" : "−"}${Math.abs(d)} vehicle${Math.abs(d) === 1 ? "" : "s"}`;
+      cls = d > 0 ? "win" : "lose";
+    } else if (s.remaining === 0 && s.green !== f.green) {
+      const d = f.green - s.green;
+      text = d > 0 ? `${d} s less waiting` : `${-d} s longer green`;
+      cls = d > 0 ? "win" : "lose";
+    }
+    mid.textContent = text;
+    mid.className = `v-mid ${cls}`;
+    el("verdict").hidden = false;
   }
 
   let lastDensity = null;
@@ -122,16 +204,52 @@
     const locked = busy || autoRunning;
     simulateBtn.disabled = locked;
     manualForm.querySelector("button").disabled = locked;
+    compareBtn.disabled = busy;
+    document.querySelectorAll(".replay-btn").forEach((b) => { b.disabled = locked; });
   }
 
-  // While an animation is playing, choosing "Skip animation" fast-forwards it.
-  speedSelect.addEventListener("change", () => junction.setSpeed(speed() || 32));
-  junction.setSpeed(speed() || 32);
+  // ---- Toolbar: speed, scene, compare, auto, full screen ---------------------------------
 
-  // ---- Auto mode -------------------------------------------------------------
+  function selectSeg(groupId, attr, value) {
+    el(groupId).querySelectorAll("button").forEach((b) => {
+      b.setAttribute("aria-checked", String(b.dataset[attr] === String(value)));
+    });
+  }
+
+  function applySpeed(value) {
+    speed = value;
+    prefs.speed = value; savePrefs();
+    selectSeg("speed-seg", "speed", value);
+    views().forEach((v) => v.setSpeed(value || 32)); // "skip" fast-forwards anything playing
+  }
+  el("speed-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (b) applySpeed(Number(b.dataset.speed));
+  });
+
+  function applyScene(value) {
+    scene = value;
+    prefs.scene = value; savePrefs();
+    selectSeg("scene-seg", "scene", value);
+    views().forEach((v) => v.setScene(value));
+  }
+  el("scene-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (b) applyScene(b.dataset.scene);
+  });
+
+  function applyCompare(on) {
+    compare = on;
+    prefs.compare = on; savePrefs();
+    compareBtn.setAttribute("aria-pressed", String(on));
+    el("fixed-wrap").hidden = !on;
+    el("stage-fixed").hidden = !on;
+    el("verdict").hidden = true;
+    if (on) ensureFixedView();
+    setLabels(null);
+  }
+  compareBtn.addEventListener("click", () => applyCompare(!compare));
+  fixedInput.addEventListener("change", () => { fixedGreen(); if (compare) setLabels(null); });
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
   async function autoLoop() {
     while (autoRunning) {
       if (busy) { await sleep(200); continue; }
@@ -139,10 +257,9 @@
       if (!rec) { stopAuto(); break; } // stop on errors (e.g. database down)
       autoRuns += 1;
       el("auto-count").textContent = autoRuns;
-      await sleep(speed() > 0 ? 700 : 1200); // short pause so each result can be read
+      await sleep(speed > 0 ? 900 : 1300); // a beat to see the result
     }
   }
-
   function startAuto() {
     autoRunning = true;
     autoRuns = 0;
@@ -151,22 +268,44 @@
     setBusy(busy);
     autoLoop();
   }
-
   function stopAuto() {
     autoRunning = false;
     autoBtn.setAttribute("aria-pressed", "false");
     setBusy(busy);
   }
-
   autoBtn.addEventListener("click", () => (autoRunning ? stopAuto() : startAuto()));
 
-  // ---- Recent results + chart --------------------------------------------------
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (stagePanel.requestFullscreen) stagePanel.requestFullscreen();
+  }
+  el("fullscreen-btn").addEventListener("click", toggleFullscreen);
+
+  // ---- Recent results + chart ------------------------------------------------------------
 
   // One request feeds both the "Recent results" table and the chart.
   async function loadRecent() {
     try {
       const body = await getJSON(`/api/simulations?limit=${Math.max(window.RECENT_LIMIT, window.CHART_RUNS)}`);
-      renderRecordRows(el("recent-body"), body.records.slice(0, window.RECENT_LIMIT), "No simulations saved yet.");
+      const tbody = el("recent-body");
+      const recent = body.records.slice(0, window.RECENT_LIMIT);
+      renderRecordRows(tbody, recent, "No simulations saved yet.");
+      if (recent.length) {
+        [...tbody.rows].forEach((tr, i) => {
+          const td = tr.insertCell();
+          td.className = "row-action";
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "replay-btn";
+          b.title = `Replay run #${recent[i].traffic_id}`;
+          b.innerHTML = '<svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M10 9v6l5-3z" fill="currentColor"/></svg> Replay';
+          b.disabled = busy || autoRunning;
+          b.addEventListener("click", () => replay(recent[i].traffic_id));
+          td.appendChild(b);
+        });
+      } else {
+        tbody.rows[0].cells[0].colSpan = 7;
+      }
       renderChart(body.records.slice(0, window.CHART_RUNS).reverse()); // oldest on the left
     } catch (err) {
       el("recent-body").replaceChildren();
@@ -218,6 +357,8 @@
       options: {
         maintainAspectRatio: false,
         layout: { padding: { right: 100, top: 6 } },
+        onClick: (_e, items) => { if (items.length) replay(chart.$runs[items[0].index].traffic_id); },
+        onHover: (e, items) => { e.native.target.style.cursor = items.length ? "pointer" : ""; },
         scales: {
           x: { grid: { display: false }, border: { color: grid }, ticks: { color: ink, maxRotation: 0, autoSkip: true } },
           y: { min: 0, max: 50, grid: { color: grid }, border: { display: false }, ticks: { stepSize: 10, color: ink } },
@@ -235,6 +376,7 @@
                 const r = chart.$runs[ctx.dataIndex];
                 return `${r.vehicle_count} vehicles · ${r.density_level} · ${r.green_time_seconds} s green`;
               },
+              footer: () => "Click to replay",
             },
           },
         },
@@ -244,7 +386,7 @@
     chart.$runs = runs;
   }
 
-  // ---- Rules editor ---------------------------------------------------------------
+  // ---- Rules editor ----------------------------------------------------------------------
 
   const rulesForm = el("rules-form");
   const rulesView = el("rules-view");
@@ -252,7 +394,6 @@
   const rulesError = el("rules-error");
   const field = (name) => rulesForm.elements[name];
   const RULE_FIELDS = ["low_max", "medium_max", "low_green", "medium_green", "high_green"];
-  let savedConfig = null;
 
   function fillForm(config) {
     RULE_FIELDS.forEach((k) => { field(k).value = config[k]; });
@@ -288,13 +429,6 @@
     if (lastDensity) highlightRule(lastDensity);
   }
 
-  function applyRules(payload) {
-    window.TRAFFIC_RULES = payload.rules;
-    savedConfig = payload.config;
-    renderRulesTable(payload.rules);
-    if (chart) chart.update(); // redraw the boundary lines
-  }
-
   async function saveRules(method, body) {
     rulesError.textContent = "";
     try {
@@ -303,7 +437,9 @@
         headers: { "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
-      applyRules(payload);
+      window.TRAFFIC_RULES = payload.rules;
+      renderRulesTable(payload.rules);
+      if (chart) chart.update(); // redraw the boundary lines
       setEditing(false);
       const panel = rulesView.closest(".panel");
       panel.classList.remove("saved-flash");
@@ -322,9 +458,7 @@
 
   rulesEditBtn.addEventListener("click", async () => {
     try {
-      const payload = await getJSON("/api/rules");
-      savedConfig = payload.config;
-      fillForm(savedConfig);
+      fillForm((await getJSON("/api/rules")).config);
     } catch (err) {
       showError(err.message);
       return;
@@ -346,7 +480,7 @@
   });
   rulesForm.addEventListener("keydown", (e) => { if (e.key === "Escape") setEditing(false); });
 
-  // ---- Manual value + keyboard -------------------------------------------------------
+  // ---- Manual value + keyboard ---------------------------------------------------------------
 
   simulateBtn.addEventListener("click", () => runSimulation(generateVehicleCount()));
 
@@ -371,15 +505,26 @@
   }
   manualInput.addEventListener("input", clearManualError);
 
-  // Keyboard shortcut: S runs a random simulation (ignored while typing).
+  // Keyboard: S simulates, F toggles full screen (ignored while typing).
   document.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() !== "s" || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
-    if (simulateBtn.disabled) return;
-    e.preventDefault();
-    simulateBtn.click();
+    const key = e.key.toLowerCase();
+    if (key === "s" && !simulateBtn.disabled) { e.preventDefault(); simulateBtn.click(); }
+    if (key === "f") { e.preventDefault(); toggleFullscreen(); }
   });
 
+  // ---- Start ---------------------------------------------------------------------------------------
+
+  applySpeed(speed);
+  applyScene(scene);
+  applyCompare(compare);
   loadRecent();
+
+  const replayId = new URLSearchParams(location.search).get("replay");
+  if (replayId && /^\d+$/.test(replayId)) {
+    history.replaceState(null, "", location.pathname);
+    replay(Number(replayId));
+  }
 })();

@@ -107,7 +107,13 @@ def _run(client, *counts):
         client.post("/api/simulations", json={"vehicle_count": n})
 
 
-def test_analytics_hidden_by_default(client):
+def test_analytics_shown_by_default(client):
+    assert 'href="/analytics"' in client.get("/").get_data(as_text=True)
+    assert client.get("/analytics").status_code == 200
+
+
+def test_analytics_can_be_hidden(client, app):
+    app.config["SHOW_ANALYTICS"] = False
     html = client.get("/").get_data(as_text=True)
     assert 'href="/analytics"' not in html
     assert client.get("/analytics").status_code == 404
@@ -210,3 +216,17 @@ def test_reports_export_csv_respects_filter(client):
 def test_reports_export_csv_empty(client):
     lines = client.get("/reports/export.csv").get_data(as_text=True).splitlines()
     assert len(lines) == 1  # header only
+
+
+def test_get_single_simulation_for_replay(client):
+    rec = client.post("/api/simulations", json={"vehicle_count": 33, "scenario_label": "Demo"}).get_json()["record"]
+    res = client.get(f"/api/simulations/{rec['traffic_id']}")
+    assert res.status_code == 200
+    assert res.get_json()["record"] == rec
+    assert client.get("/api/simulations/999999").status_code == 404
+
+
+def test_reports_rows_link_to_replay(client):
+    rec = client.post("/api/simulations", json={"vehicle_count": 12}).get_json()["record"]
+    html = client.get("/reports").get_data(as_text=True)
+    assert f'href="/?replay={rec["traffic_id"]}"' in html

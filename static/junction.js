@@ -1,21 +1,33 @@
 // Top-down ("god view") junction simulation.
 //
 // The simulated vehicle count becomes the queue on the west approach
-// (eastbound). That approach gets the recommended green time; the other
-// roads carry illustrative background traffic. Bangladesh drives on the left.
+// (eastbound). That approach gets a green time (the rule's recommendation, or
+// a fixed plan when comparing); the other roads carry illustrative background
+// traffic. Bangladesh drives on the left.
 //
-// The model (createModel) has no DOM code so it can be tested in Node.
-// The view (Junction.create) draws the model on a <canvas> and drives it.
+// createModel() is pure logic (no DOM) so it can be tested in Node. The queue
+// for a run is generated from a seed, and the model advances in fixed time
+// steps, so the same run (seed + count + green time) always plays out the
+// same way - which makes replays and fixed-vs-smart comparisons fair.
+//
+// create() builds the view: a canvas plus overlays (label, big signal with
+// countdown, vehicles-through counter, hover tooltip) inside a container.
 
 (function (root) {
   "use strict";
+
+  // ---------------------------------------------------------------------------
+  // World geometry (world units ~ pixels at zoom 1; 1 unit ~ 0.15 m)
+  // ---------------------------------------------------------------------------
 
   const W = 1100;
   const H = 560;
   const ROAD = { hTop: 238, hBot: 322, hMid: 280, vLeft: 758, vRight: 842, vMid: 800 };
   const SIDEWALK = 12;
+  // The part of the world shown: full width, trimming empty ground above and below.
+  const VIEW = { x: 0, y: 70, w: W, h: 420 };
+  const METRES_PER_UNIT = 0.15;
 
-  // Approach geometry. s = distance travelled from the entry point.
   const GEOM = {
     E: { axis: "x", dir: 1, entry: -60, stop: 730, exit: W + 60, angle: 0, signal: "main" },
     W: { axis: "x", dir: -1, entry: W + 60, stop: 870, exit: -60, angle: Math.PI, signal: "main" },
@@ -31,21 +43,16 @@
   ];
 
   const TYPES = {
-    car: { len: 21, w: 12, v0: 90, colors: ["#f1f3f4", "#202124", "#9aa0a6", "#1a56db", "#b42318", "#f8fafc", "#4b5563", "#0f766e", "#7c2d12"] },
-    cng: { len: 16, w: 11, v0: 80, colors: ["#15803d"] },
-    bus: { len: 36, w: 13, v0: 75, colors: ["#b42318", "#1d4ed8", "#c2410c", "#047857"] },
+    car: { name: "Car", len: 21, w: 12, v0: 90, colors: ["#f1f3f4", "#202124", "#9aa0a6", "#1a56db", "#b42318", "#f8fafc", "#4b5563", "#0f766e", "#7c2d12"] },
+    cng: { name: "CNG auto-rickshaw", len: 16, w: 11, v0: 80, colors: ["#15803d"] },
+    bus: { name: "Bus", len: 36, w: 13, v0: 75, colors: ["#b42318", "#1d4ed8", "#c2410c", "#047857"] },
   };
 
-  // Intelligent Driver Model parameters (pixels, seconds). 1 px ~ 0.15 m.
+  // Intelligent Driver Model parameters (world units, seconds).
   const IDM = { a: 28, b: 45, T: 1.4, s0: 5 };
-
-  const PHASES = {
-    crossAmber: 3,
-    allRed1: 1.5,
-    amber: 3,
-    allRed2: 1.5,
-  };
-  const AMBIENT_RATE = { W: 0.12, S: 0.15, N: 0.15 }; // vehicles per second per lane
+  const PHASES = { crossAmber: 3, allRed1: 1.5, amber: 3, allRed2: 1.5 };
+  const AMBIENT_RATE = { W: 0.05, S: 0.09, N: 0.09 }; // vehicles per second per lane
+  const DT = 1 / 60; // fixed simulation step
 
   function idmAccel(v, v0, gap, dv) {
     const free = 1 - Math.pow(v / v0, 4);
@@ -69,8 +76,9 @@
   // ---------------------------------------------------------------------------
 
   function createModel(options = {}) {
-    const rand = options.rand || Math.random;
     const ambient = options.ambient !== false;
+    const ambientRand = options.ambientRand || Math.random;
+    let queueRand = mulberry32(1);
 
     const lanes = LANES.map(([id, group, fixed]) => {
       const g = GEOM[group];
@@ -85,22 +93,20 @@
 
     const state = {
       phase: "idle", t: 0, main: "red", cross: "green",
-      green: 0, target: 0, cleared: 0, counting: false, run: 0,
+      green: 0, target: 0, cleared: 0, counting: false, lastCrossT: null, lastResult: null,
     };
     let resolveRun = null;
     let nextId = 1;
 
-    function randomType() {
+    function makeVehicle(rand, s, vFactor, simulated) {
       const r = rand();
-      return r < 0.55 ? "car" : r < 0.88 ? "cng" : "bus";
-    }
-
-    function makeVehicle(s, v) {
-      const type = randomType();
+      const type = r < 0.55 ? "car" : r < 0.88 ? "cng" : "bus";
       const spec = TYPES[type];
       return {
-        id: nextId++, type, s, v: v * spec.v0, len: spec.len, w: spec.w, v0: spec.v0 * (0.92 + rand() * 0.16),
-        color: spec.colors[Math.floor(rand() * spec.colors.length)], braking: false, goOnAmber: null,
+        id: nextId++, type, s, v: vFactor * spec.v0, len: spec.len, w: spec.w,
+        v0: spec.v0 * (0.92 + rand() * 0.16),
+        color: spec.colors[Math.floor(rand() * spec.colors.length)],
+        braking: false, goOnAmber: null, simulated, cleared: false,
       };
     }
 
@@ -111,27 +117,20 @@
     }
 
     function waitingEast() {
-      const list = [];
-      for (const lane of eastLanes) for (const v of lane.vehicles) if (v.s < lane.stopS) list.push([lane, v]);
-      return list;
+      let n = 0;
+      for (const lane of eastLanes) for (const v of lane.vehicles) if (v.s < lane.stopS) n++;
+      return n;
     }
 
-    // Make the eastbound queue hold exactly `count` vehicles.
-    function setQueue(count) {
-      const waiting = waitingEast().sort((a, b) => a[1].s - b[1].s); // back of queue first
-      if (waiting.length > count) {
-        for (const [lane, v] of waiting.slice(0, waiting.length - count)) {
-          lane.vehicles.splice(lane.vehicles.indexOf(v), 1);
-        }
-        return;
-      }
-      const perLane = new Map(eastLanes.map((l) => [l, 0]));
-      for (const [lane] of waiting) perLane.set(lane, perLane.get(lane) + 1);
-      for (let k = waiting.length; k < count; k++) {
-        const lane = [...perLane.entries()].sort((a, b) => a[1] - b[1] || (rand() - 0.5))[0][0];
-        perLane.set(lane, perLane.get(lane) + 1);
-        const s = Math.min(backOf(lane) - 8, -10);
-        lane.vehicles.push(makeVehicle(s, 0.8));
+    // A fresh, seeded queue of exactly `count` vehicles, alternating lanes.
+    function buildQueue(count) {
+      for (const lane of eastLanes) lane.vehicles = lane.vehicles.filter((v) => v.s >= lane.stopS);
+      const nextS = eastLanes.map((lane) => Math.min(backOf(lane) - 8, -10));
+      for (let k = 0; k < count; k++) {
+        const i = k % 2;
+        const v = makeVehicle(queueRand, nextS[i], 0.8, true);
+        eastLanes[i].vehicles.push(v);
+        nextS[i] = v.s - v.len - 10;
       }
     }
 
@@ -142,20 +141,27 @@
       state.cross = phase === "idle" || phase === "arrive" ? "green" : phase === "crossAmber" ? "amber" : "red";
     }
 
-    function startRun(count, green) {
+    function startRun(count, green, seed) {
       if (resolveRun) resolveRun({ interrupted: true });
-      state.target = count;
-      state.green = green;
-      state.cleared = 0;
-      state.counting = false;
-      state.run += 1;
-      setQueue(count);
+      queueRand = mulberry32(seed === undefined ? Math.floor(Math.random() * 1e9) : seed);
+      Object.assign(state, { target: count, green, cleared: 0, counting: false, lastCrossT: null, lastResult: null });
+      buildQueue(count);
       setPhase("arrive");
       return new Promise((resolve) => { resolveRun = resolve; });
     }
 
     function finishRun() {
-      const result = { interrupted: false, cleared: state.cleared, remaining: waitingEast().length };
+      const remaining = waitingEast();
+      let unusedGreen = 0;
+      if (remaining === 0) {
+        unusedGreen = state.target === 0 ? state.green
+          : state.lastCrossT === null ? 0 : Math.max(0, state.green - state.lastCrossT);
+      }
+      const result = {
+        interrupted: false, target: state.target, green: state.green,
+        cleared: state.cleared, remaining, unusedGreen: Math.round(unusedGreen),
+      };
+      state.lastResult = result;
       state.counting = false;
       setPhase("idle");
       const r = resolveRun;
@@ -166,7 +172,8 @@
     function advancePhase() {
       const p = state.phase;
       if (p === "arrive") {
-        const settled = waitingEast().every(([, v]) => v.v < 3);
+        let settled = true;
+        for (const lane of eastLanes) for (const v of lane.vehicles) if (v.s < lane.stopS && v.v >= 3) settled = false;
         if ((state.t >= 1 && settled) || state.t >= 30) setPhase("crossAmber");
       } else if (p === "crossAmber" && state.t >= PHASES.crossAmber) {
         setPhase("allRed1");
@@ -186,9 +193,9 @@
       if (!ambient) return;
       for (const lane of lanes) {
         const rate = AMBIENT_RATE[lane.group];
-        if (!rate || rand() > rate * dt) continue;
+        if (!rate || ambientRand() > rate * dt) continue;
         if (backOf(lane) < 16) continue; // lane backed up to the edge
-        lane.vehicles.push(makeVehicle(-6, 0.9));
+        lane.vehicles.push(makeVehicle(ambientRand, -6, 0.9, false));
       }
     }
 
@@ -209,8 +216,7 @@
             // Commit once: go only if stopping comfortably is impossible.
             v.goOnAmber = dStop < (v.v * v.v) / (2 * IDM.b) + 2;
           }
-          const mustStop = sig === "red" ? !v.goOnAmber : !v.goOnAmber;
-          if (mustStop && dStop < gap) { gap = dStop; leaderV = 0; }
+          if (!v.goOnAmber && dStop < gap) { gap = dStop; leaderV = 0; }
         }
 
         const a = Math.max(idmAccel(v.v, v.v0, gap, v.v - leaderV), -250);
@@ -221,12 +227,14 @@
         v.braking = a < -6 || v.v < 0.5;
         if (lane.group === "E" && state.counting && before < lane.stopS && v.s >= lane.stopS) {
           state.cleared += 1;
+          v.cleared = true;
+          state.lastCrossT = state.phase === "green" ? state.t : state.green;
         }
       }
       lane.vehicles = lane.vehicles.filter((v) => v.s - v.len < lane.exitS);
     }
 
-    function step(dt) {
+    function step(dt = DT) {
       state.t += dt;
       advancePhase();
       spawnAmbient(dt);
@@ -243,8 +251,9 @@
       return {
         phase: state.phase, main: state.main, cross: state.cross,
         remaining: remaining === null ? null : Math.max(0, remaining),
-        waiting: waitingEast().length, cleared: state.cleared,
-        target: state.target, green: state.green, busy: resolveRun !== null,
+        waiting: waitingEast(), cleared: state.cleared,
+        target: state.target, green: state.green, t: state.t,
+        busy: resolveRun !== null, lastResult: state.lastResult,
       };
     }
 
@@ -254,8 +263,35 @@
     return { lanes, state, step, startRun, info, timeScale };
   }
 
+  // Runs a whole cycle with no drawing and returns the result (same as play).
+  function runInstant(count, green, seed) {
+    const m = createModel({ ambient: false });
+    m.startRun(count, green, seed);
+    for (let i = 0; i < 200000 && m.info().busy; i++) m.step(DT);
+    return m.state.lastResult;
+  }
+
   // ---------------------------------------------------------------------------
-  // View
+  // City layout (generated once from a fixed seed)
+  // ---------------------------------------------------------------------------
+
+  function buildCity() {
+    const city = { lamps: [] };
+    for (let x = 60; x < W; x += 116) {
+      if (x > ROAD.vLeft - 30 && x < ROAD.vRight + 30) continue;
+      city.lamps.push({ x, y: ROAD.hTop - 4 }, { x: x + 58, y: ROAD.hBot + 4 });
+    }
+    for (let y = 40; y < H; y += 116) {
+      if (y > ROAD.hTop - 30 && y < ROAD.hBot + 30) continue;
+      city.lamps.push({ x: ROAD.vLeft - 4, y }, { x: ROAD.vRight + 4, y: y + 58 });
+    }
+    return city;
+  }
+
+  const CITY = buildCity();
+
+  // ---------------------------------------------------------------------------
+  // Drawing
   // ---------------------------------------------------------------------------
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -263,106 +299,53 @@
     ctx.roundRect(x, y, w, h, r);
   }
 
+  function line(ctx, x0, y0, x1, y1) {
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  }
+
+
   function drawBackground(ctx) {
-    const rand = mulberry32(7);
-    ctx.fillStyle = "#d8dccd";
+    ctx.fillStyle = "#f3f3f1";
     ctx.fillRect(0, 0, W, H);
 
-    // City blocks with buildings, rooftop tanks and trees.
-    const blocks = [
-      [0, 0, ROAD.vLeft - SIDEWALK, ROAD.hTop - SIDEWALK],
-      [ROAD.vRight + SIDEWALK, 0, W, ROAD.hTop - SIDEWALK],
-      [0, ROAD.hBot + SIDEWALK, ROAD.vLeft - SIDEWALK, H],
-      [ROAD.vRight + SIDEWALK, ROAD.hBot + SIDEWALK, W, H],
-    ];
-    const roofs = ["#cbbfa8", "#b9a68c", "#a3adb8", "#d6cdbd", "#9fa79a", "#c7b199", "#bfb6aa", "#aab4bf"];
-    for (const [x0, y0, x1, y1] of blocks) {
-      for (let y = y0 + 10; y < y1 - 30; y += 78) {
-        for (let x = x0 + 10; x < x1 - 30; x += 96) {
-          const bw = Math.min(84, x1 - 10 - x);
-          const bh = Math.min(66, y1 - 10 - y);
-          if (bw < 30 || bh < 30) continue;
-          if (rand() < 0.18) {
-            // small park
-            ctx.fillStyle = "#b8cfa0";
-            roundRect(ctx, x, y, bw, bh, 6); ctx.fill();
-            for (let k = 0; k < 4; k++) drawTree(ctx, x + 12 + rand() * (bw - 24), y + 12 + rand() * (bh - 24), 7 + rand() * 4);
-            continue;
-          }
-          const roof = roofs[Math.floor(rand() * roofs.length)];
-          ctx.fillStyle = "rgba(0,0,0,.18)";
-          ctx.fillRect(x + 4, y + 4, bw, bh);
-          ctx.fillStyle = roof;
-          ctx.fillRect(x, y, bw, bh);
-          ctx.strokeStyle = "rgba(0,0,0,.18)";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x + 1, y + 1, bw - 2, bh - 2);
-          // rooftop water tank and AC units
-          ctx.fillStyle = "#3b4252";
-          ctx.beginPath(); ctx.arc(x + bw - 14, y + 14, 6, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#e5e7eb";
-          for (let k = 0; k < 2; k++) ctx.fillRect(x + 8 + k * 12, y + bh - 14, 8, 6);
-        }
-      }
-    }
-
     // Sidewalks
-    ctx.fillStyle = "#c3c6cb";
+    ctx.fillStyle = "#e1e1dd";
     ctx.fillRect(0, ROAD.hTop - SIDEWALK, W, ROAD.hBot - ROAD.hTop + SIDEWALK * 2);
     ctx.fillRect(ROAD.vLeft - SIDEWALK, 0, ROAD.vRight - ROAD.vLeft + SIDEWALK * 2, H);
 
-    // Street trees along the sidewalks
-    for (let x = 30; x < W; x += 58) {
-      if (x > ROAD.vLeft - 40 && x < ROAD.vRight + 40) continue;
-      drawTree(ctx, x, ROAD.hTop - SIDEWALK - 6, 8);
-      drawTree(ctx, x + 22, ROAD.hBot + SIDEWALK + 6, 8);
-    }
-    for (let y = 26; y < H; y += 58) {
-      if (y > ROAD.hTop - 40 && y < ROAD.hBot + 40) continue;
-      drawTree(ctx, ROAD.vLeft - SIDEWALK - 6, y, 8);
-      drawTree(ctx, ROAD.vRight + SIDEWALK + 6, y + 22, 8);
-    }
 
     // Asphalt
-    ctx.fillStyle = "#3f444a";
+    ctx.fillStyle = "#454a51";
     ctx.fillRect(0, ROAD.hTop, W, ROAD.hBot - ROAD.hTop);
     ctx.fillRect(ROAD.vLeft, 0, ROAD.vRight - ROAD.vLeft, H);
+    // The simulated approach: a faint blue wash so the eye goes there first.
+    ctx.fillStyle = "rgba(0,122,255,.18)";
+    ctx.fillRect(0, ROAD.hTop, 732, ROAD.hMid - ROAD.hTop - 2);
 
-    const outside = (fn) => {
-      // run fn for the four road arms, skipping the junction box
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, W, H);
-      ctx.rect(ROAD.vLeft - 24, ROAD.hTop - 24, ROAD.vRight - ROAD.vLeft + 48, ROAD.hBot - ROAD.hTop + 48);
-      ctx.clip("evenodd");
-      fn();
-      ctx.restore();
-    };
-
-    outside(() => {
-      // Edge lines
-      ctx.strokeStyle = "rgba(255,255,255,.75)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([]);
-      line(ctx, 0, ROAD.hTop + 2, W, ROAD.hTop + 2);
-      line(ctx, 0, ROAD.hBot - 2, W, ROAD.hBot - 2);
-      line(ctx, ROAD.vLeft + 2, 0, ROAD.vLeft + 2, H);
-      line(ctx, ROAD.vRight - 2, 0, ROAD.vRight - 2, H);
-      // Lane dividers (dashed)
-      ctx.setLineDash([12, 10]);
-      line(ctx, 0, 258, W, 258);
-      line(ctx, 0, 302, W, 302);
-      line(ctx, 778, 0, 778, H);
-      line(ctx, 822, 0, 822, H);
-      // Centre lines (double yellow)
-      ctx.setLineDash([]);
-      ctx.strokeStyle = "#f2c94c";
-      ctx.lineWidth = 1.5;
-      line(ctx, 0, ROAD.hMid - 2, W, ROAD.hMid - 2);
-      line(ctx, 0, ROAD.hMid + 2, W, ROAD.hMid + 2);
-      line(ctx, ROAD.vMid - 2, 0, ROAD.vMid - 2, H);
-      line(ctx, ROAD.vMid + 2, 0, ROAD.vMid + 2, H);
-    });
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.rect(ROAD.vLeft - 24, ROAD.hTop - 24, ROAD.vRight - ROAD.vLeft + 48, ROAD.hBot - ROAD.hTop + 48);
+    ctx.clip("evenodd");
+    ctx.strokeStyle = "rgba(255,255,255,.75)";
+    ctx.lineWidth = 2;
+    line(ctx, 0, ROAD.hTop + 2, W, ROAD.hTop + 2);
+    line(ctx, 0, ROAD.hBot - 2, W, ROAD.hBot - 2);
+    line(ctx, ROAD.vLeft + 2, 0, ROAD.vLeft + 2, H);
+    line(ctx, ROAD.vRight - 2, 0, ROAD.vRight - 2, H);
+    ctx.setLineDash([12, 10]);
+    line(ctx, 0, 258, W, 258);
+    line(ctx, 0, 302, W, 302);
+    line(ctx, 778, 0, 778, H);
+    line(ctx, 822, 0, 822, H);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#f2c94c";
+    ctx.lineWidth = 1.5;
+    line(ctx, 0, ROAD.hMid - 2, W, ROAD.hMid - 2);
+    line(ctx, 0, ROAD.hMid + 2, W, ROAD.hMid + 2);
+    line(ctx, ROAD.vMid - 2, 0, ROAD.vMid - 2, H);
+    line(ctx, ROAD.vMid + 2, 0, ROAD.vMid + 2, H);
+    ctx.restore();
 
     // Stop lines
     ctx.strokeStyle = "#ffffff";
@@ -384,62 +367,52 @@
     }
   }
 
-  function line(ctx, x0, y0, x1, y1) {
-    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-  }
-
-  function drawTree(ctx, x, y, r) {
-    ctx.fillStyle = "rgba(0,0,0,.15)";
-    ctx.beginPath(); ctx.arc(x + 3, y + 3, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#4d7c3a";
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#6a9a4f";
-    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  function vehiclePose(lane, v) {
+    const pos = lane.entry + lane.dir * v.s;
+    return lane.axis === "x" ? { x: pos, y: lane.fixed } : { x: lane.fixed, y: pos };
   }
 
   function drawVehicle(ctx, lane, v) {
-    const pos = lane.entry + lane.dir * v.s;
-    const x = lane.axis === "x" ? pos : lane.fixed;
-    const y = lane.axis === "x" ? lane.fixed : pos;
+    const { x, y } = vehiclePose(lane, v);
     const { len, w } = v;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(lane.angle);
+    if (v.cleared) ctx.globalAlpha = 0.6; // through the junction: shown faded
     // the vehicle's front is at x = 0 and it extends back to x = -len
 
     ctx.fillStyle = "rgba(0,0,0,.3)";
     roundRect(ctx, -len + 2, -w / 2 + 2, len, w, 3); ctx.fill();
 
     ctx.fillStyle = v.color;
-    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 2 : 3.5); ctx.fill();
+    roundRect(ctx, -len, -w / 2, len, w, v.type === "bus" ? 2 : 4); ctx.fill();
 
     if (v.type === "car") {
       ctx.fillStyle = "rgba(20,30,45,.85)";
-      ctx.fillRect(-7, -w / 2 + 1.2, 2.8, w - 2.4);     // windscreen
-      ctx.fillRect(-len + 2.5, -w / 2 + 1.5, 2, w - 3); // rear window
+      ctx.fillRect(-8, -w / 2 + 1.4, 3.2, w - 2.8);
+      ctx.fillRect(-len + 2.8, -w / 2 + 1.8, 2.4, w - 3.6);
       ctx.fillStyle = "rgba(255,255,255,.14)";
-      ctx.fillRect(-len + 4.5, -w / 2 + 1.5, len - 11.5, w - 3); // roof sheen
+      ctx.fillRect(-len + 5.4, -w / 2 + 1.8, len - 13.6, w - 3.6);
     } else if (v.type === "cng") {
       ctx.fillStyle = "#14281d";
-      roundRect(ctx, -len + 1.5, -w / 2 + 0.8, len - 5, w - 1.6, 3); ctx.fill(); // canopy
+      roundRect(ctx, -len + 1.6, -w / 2 + 0.9, len - 5.6, w - 1.8, 3); ctx.fill();
       ctx.fillStyle = "rgba(20,30,45,.85)";
-      ctx.fillRect(-3.6, -w / 2 + 1.5, 1.8, w - 3);
+      ctx.fillRect(-4, -w / 2 + 1.6, 2, w - 3.2);
     } else {
       ctx.fillStyle = "rgba(255,255,255,.85)";
-      ctx.fillRect(-len + 2, -1.5, len - 6, 3);          // roof stripe
+      ctx.fillRect(-len + 2, -1.6, len - 6, 3.2);
       ctx.fillStyle = "rgba(20,30,45,.85)";
-      ctx.fillRect(-3.5, -w / 2 + 1, 2.5, w - 2);        // windscreen
+      ctx.fillRect(-3.8, -w / 2 + 1, 2.8, w - 2);
       ctx.fillStyle = "rgba(255,255,255,.35)";
-      for (let k = -len + 5; k < -7; k += 6) ctx.fillRect(k, -w / 2 + 2, 3, 2.2);
+      for (let k = -len + 5; k < -7; k += 6) ctx.fillRect(k, -w / 2 + 2, 3, 2.4);
     }
 
-    // head- and tail-lights
     ctx.fillStyle = "#fff6c8";
-    ctx.fillRect(-1.2, -w / 2 + 1, 1.2, 2);
-    ctx.fillRect(-1.2, w / 2 - 3, 1.2, 2);
+    ctx.fillRect(-1.3, -w / 2 + 1, 1.3, 2.2);
+    ctx.fillRect(-1.3, w / 2 - 3.2, 1.3, 2.2);
     ctx.fillStyle = v.braking ? "#ff2a2a" : "#7f1d1d";
-    ctx.fillRect(-len, -w / 2 + 1, 1.4, 2.2);
-    ctx.fillRect(-len, w / 2 - 3.2, 1.4, 2.2);
+    ctx.fillRect(-len, -w / 2 + 1, 1.5, 2.4);
+    ctx.fillRect(-len, w / 2 - 3.4, 1.5, 2.4);
     if (v.braking) {
       ctx.fillStyle = "rgba(255,40,40,.25)";
       ctx.beginPath(); ctx.arc(-len, 0, w * 0.7, Math.PI / 2, Math.PI * 1.5); ctx.fill();
@@ -447,131 +420,339 @@
     ctx.restore();
   }
 
+  // Night: headlight beams and tail-light glow, drawn over the dark tint.
+  function drawVehicleLights(ctx, lane, v) {
+    const { x, y } = vehiclePose(lane, v);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lane.angle);
+    const beam = ctx.createLinearGradient(0, 0, 26, 0);
+    beam.addColorStop(0, "rgba(255,240,190,.32)");
+    beam.addColorStop(1, "rgba(255,240,190,0)");
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(0, -v.w / 2 + 1);
+    ctx.lineTo(26, -v.w / 2 - 4);
+    ctx.lineTo(26, v.w / 2 + 4);
+    ctx.lineTo(0, v.w / 2 - 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = v.braking ? "rgba(255,40,40,.9)" : "rgba(255,40,40,.5)";
+    ctx.beginPath(); ctx.arc(-v.len, -v.w / 2 + 2, v.braking ? 3 : 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-v.len, v.w / 2 - 2, v.braking ? 3 : 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   const LAMP = { red: "#ff3b30", amber: "#ffb300", green: "#34c759" };
 
   function drawSignal(ctx, x, y, vertical, state) {
-    const len = 26;
-    const thick = 10;
+    const len = 40;
+    const thick = 16;
+    const w = vertical ? thick : len;
+    const h = vertical ? len : thick;
     ctx.fillStyle = "rgba(0,0,0,.3)";
-    roundRect(ctx, x + 1.5, y + 1.5, vertical ? thick : len, vertical ? len : thick, 4); ctx.fill();
+    roundRect(ctx, x + 1.5, y + 1.5, w, h, 5); ctx.fill();
     ctx.fillStyle = "#111";
-    roundRect(ctx, x, y, vertical ? thick : len, vertical ? len : thick, 4); ctx.fill();
+    roundRect(ctx, x, y, w, h, 5); ctx.fill();
     ["red", "amber", "green"].forEach((c, i) => {
-      const cx = vertical ? x + thick / 2 : x + 5 + i * 8;
-      const cy = vertical ? y + 5 + i * 8 : y + thick / 2;
+      const cx = vertical ? x + thick / 2 : x + 8 + i * 12;
+      const cy = vertical ? y + 8 + i * 12 : y + thick / 2;
       const on = state === c;
       if (on) {
         ctx.fillStyle = LAMP[c] + "55";
-        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI * 2); ctx.fill();
       }
       ctx.fillStyle = on ? LAMP[c] : "#3a3a3a";
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 4.6, 0, Math.PI * 2); ctx.fill();
     });
   }
 
-  function pill(ctx, text, x, y, bg, fg) {
-    ctx.font = "600 12px system-ui, -apple-system, Segoe UI, sans-serif";
-    const w = ctx.measureText(text).width + 14;
+  function pill(ctx, text, x, y, bg, fg, align = "left") {
+    ctx.font = "600 13px Inter, system-ui, -apple-system, Segoe UI, sans-serif";
+    const w = ctx.measureText(text).width + 16;
+    const left = align === "center" ? x - w / 2 : align === "right" ? x - w : x;
     ctx.fillStyle = bg;
-    roundRect(ctx, x, y, w, 20, 10); ctx.fill();
+    roundRect(ctx, left, y, w, 22, 11); ctx.fill();
     ctx.fillStyle = fg;
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x + 7, y + 10.5);
+    ctx.textAlign = "left";
+    ctx.fillText(text, left + 8, y + 11.5);
     return w;
   }
 
-  function create(canvas, hud) {
+  // ---------------------------------------------------------------------------
+  // View
+  // ---------------------------------------------------------------------------
+
+  const PHASE_TEXT = {
+    idle: "Red · cross road moving",
+    arrive: "Red · vehicles arriving",
+    crossAmber: "Red · cross road amber",
+    allRed1: "All red · junction clearing",
+    green: "Green · queue moving",
+    amber: "Amber · last vehicles",
+    allRed2: "All red · junction clearing",
+  };
+
+  function el(tag, cls, html) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (html !== undefined) node.innerHTML = html;
+    return node;
+  }
+
+  function create(container, opts = {}) {
     const model = createModel();
-    const ctx = canvas.getContext("2d");
-    const background = document.createElement("canvas");
-    let dpr = 0;
-    let speed = 1;
-    let last = null;
+    const box = el("div", "jx-box");
+    const canvas = el("canvas", "jx-canvas");
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", opts.ariaLabel || "Animated top-down view of the junction");
+    const label = el("div", "jx-label");
+    // Big signal + countdown (top left) and a vehicles-through counter (top right).
+    const signal = el("div", "jx-signal",
+      '<div class="jx-lights"><i data-c="red"></i><i data-c="amber"></i><i data-c="green"></i></div>' +
+      '<div class="jx-seconds num"></div>');
+    signal.dataset.signal = "red";
+    signal.setAttribute("role", "status");
+    const counter = el("div", "jx-counter",
+      '<div class="jx-num num"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11v6a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H8v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" fill="currentColor"/></svg>' +
+      '<b class="jx-through">0</b><span class="jx-total"></span><span class="jx-badge"></span></div>' +
+      '<div class="jx-bar"><span></span></div>');
+    counter.dataset.state = "idle";
+    const tip = el("div", "jx-tip");
+    tip.hidden = true;
+    box.append(canvas, label, signal, counter, tip);
+    container.append(box);
 
-    function resize() {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      if (ratio === dpr) return;
-      dpr = ratio;
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      background.width = W * dpr;
-      background.height = H * dpr;
-      const bctx = background.getContext("2d");
-      bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawBackground(bctx);
-    }
-
-    function render() {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(background, 0, 0);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      for (const lane of model.lanes) for (const v of lane.vehicles) drawVehicle(ctx, lane, v);
-
-      const { main, cross } = model.state;
-      drawSignal(ctx, 704, 227, false, main);   // west approach (simulated)
-      drawSignal(ctx, 870, 323, false, main);   // east approach
-      drawSignal(ctx, 843, 184, true, cross);   // north approach
-      drawSignal(ctx, 747, 350, true, cross);   // south approach
-
-      const info = model.info();
-      pill(ctx, "Simulated approach →", 12, 210, "rgba(17,24,39,.85)", "#fff");
-      if (info.remaining !== null && (info.main === "green" || info.main === "amber")) {
-        const bg = info.main === "green" ? "#1e7d4b" : "#b7791f";
-        pill(ctx, `${Math.ceil(info.remaining)} s`, 662, 202, bg, "#fff");
-      }
-      updateHud(info);
-    }
-
-    const hudCache = {};
-    function setText(key, text) {
-      if (!hud[key] || hudCache[key] === text) return;
-      hudCache[key] = text;
-      hud[key].textContent = text;
-    }
-
-    const PHASE_TEXT = {
-      idle: "Red · cross road moving",
-      arrive: "Red · vehicles arriving",
-      crossAmber: "Red · cross road amber",
-      allRed1: "All red · junction clearing",
-      green: "Green · queue moving",
-      amber: "Amber · last vehicles",
-      allRed2: "All red · junction clearing",
+    const q = (node, sel) => node.querySelector(sel);
+    const ui = {
+      seconds: q(signal, ".jx-seconds"),
+      through: q(counter, ".jx-through"), total: q(counter, ".jx-total"),
+      badge: q(counter, ".jx-badge"), bar: q(counter, ".jx-bar span"),
     };
 
-    function updateHud(info) {
-      setText("phase", PHASE_TEXT[info.phase]);
-      if (hud.phaseDot && hud.phaseDot.dataset.signal !== info.main) hud.phaseDot.dataset.signal = info.main;
-      setText("countdown", info.remaining === null ? "–" : `${Math.ceil(info.remaining)} s`);
-      setText("waiting", String(info.waiting));
-      setText("cleared", info.phase === "idle" && !info.target ? "–" : `${info.cleared} of ${info.target}`);
+    const ctx = canvas.getContext("2d");
+    const bg = document.createElement("canvas");
+    let scale = 1;
+    let dpr = 1;
+    let speed = 1;
+    let scene = "day";
+    let last = null;
+    let acc = 0;
+    let shownResult = null; // result to display when nothing is animating (skip mode)
+    let drops = [];
+
+    if (opts.label) label.textContent = opts.label;
+    label.hidden = !opts.label;
+
+    // ---- sizing ------------------------------------------------------------
+    function fit() {
+      const full = container.closest(":fullscreen") !== null;
+      const availW = container.clientWidth;
+      const availH = full ? container.clientHeight : availW * (VIEW.h / VIEW.w);
+      let w = availW;
+      let h = w * (VIEW.h / VIEW.w);
+      if (h > availH) { h = availH; w = h * (VIEW.w / VIEW.h); }
+      w = Math.max(1, Math.floor(w));
+      h = Math.max(1, Math.floor(h));
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      if (box.style.width !== `${w}px`) { box.style.width = `${w}px`; box.style.height = `${h}px`; }
+      const newScale = w / VIEW.w;
+      if (Math.abs(newScale - scale) < 1e-6 && ratio === dpr && canvas.width === Math.round(w * dpr)) return;
+      scale = newScale;
+      dpr = ratio;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      bg.width = Math.round(W * scale * dpr);
+      bg.height = Math.round(H * scale * dpr);
+      const b = bg.getContext("2d");
+      b.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+      drawBackground(b);
+    }
+    new ResizeObserver(fit).observe(container);
+    document.addEventListener("fullscreenchange", () => requestAnimationFrame(fit));
+
+    // ---- rendering ------------------------------------------------------------
+    function worldTransform() {
+      const k = scale * dpr;
+      ctx.setTransform(k, 0, 0, k, -VIEW.x * k, -VIEW.y * k);
     }
 
-    function frame(now) {
-      resize();
-      if (last !== null) {
-        const real = Math.min((now - last) / 1000, 0.1);
-        let sim = real * speed * model.timeScale();
-        while (sim > 0) {
-          const dt = Math.min(sim, 1 / 30);
-          model.step(dt);
-          sim -= dt;
+    function render(realDt) {
+      worldTransform();
+      ctx.drawImage(bg, 0, 0, W, H);
+      for (const lane of model.lanes) for (const v of lane.vehicles) drawVehicle(ctx, lane, v);
+
+      if (scene === "rain") {
+        ctx.fillStyle = "rgba(40,55,80,.22)";
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (scene === "night") {
+        ctx.fillStyle = "rgba(10,16,36,.5)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const l of CITY.lamps) {
+          const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 30);
+          g.addColorStop(0, "rgba(255,206,120,.2)");
+          g.addColorStop(1, "rgba(255,206,120,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(l.x, l.y, 30, 0, Math.PI * 2); ctx.fill();
+        }
+        for (const lane of model.lanes) for (const v of lane.vehicles) drawVehicleLights(ctx, lane, v);
+        ctx.restore();
+      }
+
+      const { main, cross } = model.state;
+      drawSignal(ctx, 690, 218, false, main);   // west approach (simulated)
+      drawSignal(ctx, 870, 326, false, main);   // east approach
+      drawSignal(ctx, 846, 170, true, cross);   // north approach
+      drawSignal(ctx, 738, 350, true, cross);   // south approach
+
+      const info = model.info();
+      drawQueueMarkers(info);
+
+      if (scene === "rain") drawRain(realDt);
+      updateOverlays(info);
+    }
+
+    // Edge marker when the queue runs off the left edge.
+    function drawQueueMarkers(info) {
+      if (!info.waiting) return;
+      let hidden = 0;
+      for (const lane of model.lanes) {
+        if (lane.group !== "E") continue;
+        for (const v of lane.vehicles) if (v.s < lane.stopS && lane.entry + v.s < VIEW.x + 8) hidden++;
+      }
+      if (hidden > 0) pill(ctx, `\u2190 +${hidden}`, VIEW.x + 8, 212, "rgba(17,24,39,.85)", "#fff");
+    }
+
+    function drawRain(realDt) {
+      if (drops.length === 0) {
+        for (let i = 0; i < 170; i++) drops.push({ x: VIEW.x + Math.random() * VIEW.w, y: VIEW.y + Math.random() * VIEW.h });
+      }
+      ctx.strokeStyle = "rgba(210,225,245,.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const d of drops) {
+        d.x -= 60 * realDt;
+        d.y += 520 * realDt;
+        if (d.y > VIEW.y + VIEW.h) { d.y = VIEW.y - 10; d.x = VIEW.x + Math.random() * (VIEW.w + 60); }
+        if (d.x < VIEW.x - 10) d.x += VIEW.w + 20;
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x - 2, d.y + 13);
+      }
+      ctx.stroke();
+    }
+
+    // ---- overlays -------------------------------------------------------------
+    const cache = {};
+    function set(node, key, value, prop = "textContent") {
+      if (cache[key] === value) return;
+      cache[key] = value;
+      node[prop] = value;
+    }
+
+    function updateOverlays(info) {
+      // Signal: lamps follow the simulated road's light; big seconds during green/amber.
+      if (cache.signal !== info.main) { cache.signal = info.main; signal.dataset.signal = info.main; }
+      const secs = info.remaining !== null && (info.main === "green" || info.main === "amber") ? String(Math.ceil(info.remaining)) : "";
+      set(ui.seconds, "seconds", secs);
+      set(signal, "aria", `Signal ${info.main}${secs ? `, ${secs} seconds left` : ""}`, "ariaLabel");
+
+      // Counter: vehicles through / vehicles in the queue, and a tick or cross at the end.
+      const r = info.busy ? null : (info.lastResult || shownResult);
+      const through = r ? r.cleared : info.cleared;
+      const total = r ? r.target : info.target;
+      const state = info.busy ? "running" : r ? (r.remaining === 0 ? "ok" : "bad") : "idle";
+      const blank = state === "idle" && !total;
+      set(ui.through, "through", blank ? "\u2013" : String(through));
+      set(ui.total, "total", blank ? "" : `/ ${total}`);
+      set(ui.badge, "badge", state === "ok" ? "\u2713" : state === "bad" ? `\u2717 ${r.remaining}` : "");
+      if (cache.state !== state) { cache.state = state; counter.dataset.state = state; }
+      const pct = `${total ? Math.round((through / total) * 1000) / 10 : state === "ok" ? 100 : 0}%`;
+      if (cache.bar !== pct) { cache.bar = pct; ui.bar.style.width = pct; }
+      void PHASE_TEXT;
+    }
+
+    // ---- hover tooltip ------------------------------------------------------------
+    function vehicleAt(wx, wy) {
+      for (const lane of model.lanes) {
+        for (const v of lane.vehicles) {
+          const { x, y } = vehiclePose(lane, v);
+          const half = v.w / 2 + 2;
+          let x0, x1, y0, y1;
+          if (lane.axis === "x") {
+            [x0, x1] = lane.dir > 0 ? [x - v.len, x] : [x, x + v.len];
+            [y0, y1] = [y - half, y + half];
+          } else {
+            [y0, y1] = lane.dir > 0 ? [y - v.len, y] : [y, y + v.len];
+            [x0, x1] = [x - half, x + half];
+          }
+          if (wx >= x0 - 2 && wx <= x1 + 2 && wy >= y0 && wy <= y1) return { lane, v };
         }
       }
+      return null;
+    }
+
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const hit = vehicleAt(VIEW.x + mx / scale, VIEW.y + my / scale);
+      if (!hit) { tip.hidden = true; canvas.style.cursor = ""; return; }
+      const { lane, v } = hit;
+      const kmh = Math.round(v.v * METRES_PER_UNIT * 3.6);
+      const role = v.simulated ? (v.cleared ? "Simulated queue · through" : "Simulated queue") : "Background traffic";
+      const state = v.v < 0.5 ? "stopped" : `${kmh} km/h`;
+      tip.innerHTML = `<b>${TYPES[v.type].name}</b><span>${role} · ${state}</span>`;
+      tip.hidden = false;
+      const tx = Math.min(mx + 14, rect.width - tip.offsetWidth - 6);
+      const ty = my + 16 + tip.offsetHeight > rect.height ? my - tip.offsetHeight - 10 : my + 16;
+      tip.style.transform = `translate(${tx}px, ${ty}px)`;
+      canvas.style.cursor = "help";
+      void lane;
+    });
+    canvas.addEventListener("mouseleave", () => { tip.hidden = true; });
+
+    // ---- loop -----------------------------------------------------------------------
+    function frame(now) {
+      if (!box.isConnected) return;
+      fit();
+      const real = last === null ? 0 : Math.min((now - last) / 1000, 0.1);
       last = now;
-      render();
+      acc += real * speed;
+      for (let n = 0; n < 2000; n++) {
+        const need = DT / model.timeScale();
+        if (acc < need) break;
+        model.step(DT);
+        acc -= need;
+      }
+      render(real);
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
 
     return {
-      play: (count, green) => model.startRun(count, green),
-      setSpeed: (s) => { speed = s; },
+      play(count, green, seed) {
+        shownResult = null;
+        acc = 0;
+        return model.startRun(count, green, seed);
+      },
+      // Show a result without animating it (used when the animation is skipped).
+      showResult(result) {
+        model.state.lastResult = null;
+        shownResult = result;
+      },
+      setLabel(text) { label.textContent = text; label.hidden = !text; },
+      setSpeed(s) { speed = s; },
+      setScene(s) { scene = s; },
       info: () => model.info(),
+      element: box,
     };
   }
 
-  const api = { createModel, create, W, H };
+  const api = { createModel, runInstant, create, W, H, VIEW, DT };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Junction = api;
 })(typeof window !== "undefined" ? window : globalThis);

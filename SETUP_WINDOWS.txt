@@ -95,11 +95,11 @@ The tests use a separate database called smart_traffic_test, so your real
 records are not touched.
 
 
-OPTIONAL: SHOW THE ANALYTICS PAGE
+OPTIONAL: HIDE THE ANALYTICS PAGE
 ---------------------------------
-The Analytics page is hidden for now. To show it, run this before step 6:
+The Analytics page is shown by default. To hide it, run this before step 6:
 
-   $env:SHOW_ANALYTICS="1"
+   $env:SHOW_ANALYTICS="0"
 
 
 TROUBLESHOOTING
