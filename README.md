@@ -46,19 +46,23 @@ The table definition is in `schema.sql` if you prefer to create it by hand.
 
 ## Using the dashboard
 
-A sidebar links the three pages.
+A sidebar links the pages. The interface follows your system's light/dark
+setting, and the sidebar has a toggle to switch manually. Everything (font
+and chart library) is served from `static/vendor/`, so it works offline.
 
 **Home** - run simulations.
 1. Optionally type a scenario label (e.g. "Test Run 1").
-2. Click **Simulate Traffic**: the browser generates a random whole number
+2. Click **Simulate traffic** (or press **S**): the browser generates a random whole number
    from 0 to 50 and sends it to Flask.
 3. Flask validates the value, applies the rules, saves the record and returns it.
-4. The three result cards show count, density and green time, with a sentence
+4. The three result figures show count, density and green time, with a sentence
    explaining which rule was applied. The matching rule row is highlighted.
 5. **Recent results** shows the latest 3 saved runs.
 
-**Reports** - every saved run, newest first, 25 per page, with Low / Medium /
-High filters and a button to clear all records.
+**Reports** - every saved run, newest first, with Low / Medium / High
+filters, 20 rows per page by default (10, 20, 50 or 100 selectable),
+**Export CSV** (downloads the records matching the current filter; opens in
+Excel) and a button to clear all records.
 
 **Analytics** (hidden for now - start the app with `SHOW_ANALYTICS=1` to show it) - summary figures (total runs, average count, average green
 time, count range) and three charts: vehicle count per run (latest 50, with
@@ -78,8 +82,8 @@ rules.py         Density and green-time rules (single source of truth)
 validation.py    Input validation for vehicle counts and scenario labels
 db.py            MySQL access (PyMySQL)
 schema.sql       traffic_records table
-templates/       base.html (sidebar layout), home, reports, analytics (Bootstrap 5)
-static/          Page JavaScript (Chart.js 4 on Analytics) and CSS
+templates/       base.html (sidebar layout), home, reports, analytics, _icons.html
+static/          style.css, page JavaScript, vendor/ (Inter font, Chart.js 4)
 tests/           Automated tests for report chapter 5
 ```
 
@@ -88,7 +92,8 @@ tests/           Automated tests for report chapter 5
 | Method | Path | Purpose |
 |---|---|---|
 | GET    | `/` | Home page |
-| GET    | `/reports?density=High&page=2` | Reports page (both parameters optional) |
+| GET    | `/reports?density=High&page=2&per_page=50` | Reports page (all parameters optional) |
+| GET    | `/reports/export.csv?density=High` | CSV download of all matching records |
 | GET    | `/analytics` | Analytics page |
 | POST   | `/api/simulations` | Body `{"vehicle_count": 40, "scenario_label": "optional"}` → 201 with saved record, or 400 with `error` |
 | GET    | `/api/simulations?limit=3` | Latest records (newest first, default 50) and totals per density |

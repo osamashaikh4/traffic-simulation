@@ -8,12 +8,15 @@ Analytics pages.
 This is an academic simulation. It does not control any real traffic signal.
 """
 
+import csv
+import io
 import math
 import os
+from datetime import date
 
 import click
 import pymysql
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, Response, abort, jsonify, render_template, request
 
 import db
 from rules import MAX_COUNT, MIN_COUNT, classify, rules_as_dicts
@@ -21,11 +24,19 @@ from validation import ValidationError, parse_scenario_label, parse_vehicle_coun
 
 DENSITY_LEVELS = ("Low", "Medium", "High")
 RECENT_LIMIT = 3          # results shown on the home page
-REPORTS_PAGE_SIZE = 25
+PAGE_SIZES = (10, 20, 50, 100)
+DEFAULT_PAGE_SIZE = 20
 ANALYTICS_RUNS = 50       # runs shown on the "count per run" chart
 # Histogram buckets line up with the 10/11 and 25/26 rule boundaries.
 DISTRIBUTION_BUCKETS = [(0, 5), (6, 10), (11, 15), (16, 20), (21, 25),
                         (26, 30), (31, 35), (36, 40), (41, 45), (46, 50)]
+
+
+def csv_safe(value):
+    """Stop spreadsheet apps treating user text such as '=SUM(...)' as a formula."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 def serialize(record):
@@ -80,21 +91,46 @@ def create_app(config=None):
             recent_limit=RECENT_LIMIT,
         )
 
-    @app.get("/reports")
-    def reports():
+    def density_filter():
         density = request.args.get("density") or None
         if density is not None and density not in DENSITY_LEVELS:
             abort(400)
+        return density
+
+    @app.get("/reports")
+    def reports():
+        density = density_filter()
+        per_page = request.args.get("per_page", DEFAULT_PAGE_SIZE, type=int)
+        if per_page not in PAGE_SIZES:
+            per_page = DEFAULT_PAGE_SIZE
         total = db.count_records(density)
-        pages = max(1, math.ceil(total / REPORTS_PAGE_SIZE))
+        pages = max(1, math.ceil(total / per_page))
         page = min(max(request.args.get("page", 1, type=int), 1), pages)
-        records = db.list_records(REPORTS_PAGE_SIZE, (page - 1) * REPORTS_PAGE_SIZE, density)
+        records = db.list_records(per_page, (page - 1) * per_page, density)
         return render_template(
             "reports.html", records=[serialize(r) for r in records], totals=density_totals(),
             density=density, page=page, pages=pages, total=total,
-            first=(page - 1) * REPORTS_PAGE_SIZE + 1 if total else 0,
-            last=(page - 1) * REPORTS_PAGE_SIZE + len(records),
+            per_page=per_page, page_sizes=PAGE_SIZES,
+            # omit per_page from links while it is the default, to keep URLs short
+            per_page_arg=None if per_page == DEFAULT_PAGE_SIZE else per_page,
+            first=(page - 1) * per_page + 1 if total else 0,
+            last=(page - 1) * per_page + len(records),
         )
+
+    @app.get("/reports/export.csv")
+    def export_reports():
+        density = density_filter()
+        records = db.list_records(db.count_records(density), 0, density)
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(["ID", "Scenario", "Vehicle count", "Density", "Green time (s)", "Saved at"])
+        for r in map(serialize, records):
+            writer.writerow([r["traffic_id"], csv_safe(r["scenario_label"] or ""), r["vehicle_count"],
+                             r["density_level"], r["green_time_seconds"], r["created_at"]])
+        name = f"traffic-reports-{date.today().isoformat()}{'-' + density.lower() if density else ''}.csv"
+        # UTF-8 byte-order mark so Excel reads the file as UTF-8.
+        return Response("\ufeff" + out.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     @app.get("/analytics")
     def analytics():

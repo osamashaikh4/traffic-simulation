@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Error{% endblock %}
 {% block heading %}Something went wrong{% endblock %}
 {% block content %}
-  <div class="alert alert-danger">{{ message }}</div>
+  <div class="callout">{{ icon('alert') }}<span>{{ message }}</span></div>
 {% endblock %}

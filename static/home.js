@@ -60,12 +60,11 @@
     const rule = RULES.find((r) => r.density === rec.density_level);
     el("result-count").textContent = rec.vehicle_count;
 
-    const density = el("result-density");
-    density.textContent = rec.density_level;
-    density.className = `display-5 fw-semibold text-density-${rec.density_level.toLowerCase()}`;
+    el("result-density").textContent = rec.density_level;
+    el("result-density-wrap").className = `metric-value density-${rec.density_level.toLowerCase()}`;
     el("result-range").textContent = `Range ${rule.min}–${rule.max} vehicles`;
 
-    el("result-green").textContent = `${rec.green_time_seconds} s`;
+    el("result-green").innerHTML = `${rec.green_time_seconds}<span class="unit"> s</span>`;
 
     el("result-explanation").innerHTML =
       `Vehicle count <strong>${rec.vehicle_count}</strong> is within ` +
@@ -77,11 +76,10 @@
       tr.classList.toggle("active-rule", tr.dataset.density === rec.density_level);
     });
 
-    document.querySelectorAll(".result-card").forEach((card) => {
-      card.classList.remove("flash");
-      void card.offsetWidth; // restart animation
-      card.classList.add("flash");
-    });
+    const metrics = el("result-metrics");
+    metrics.classList.remove("flash");
+    void metrics.offsetWidth; // restart animation
+    metrics.classList.add("flash");
 
     // Illustrative only: the signal head turns green to show a recommendation exists.
     document.querySelectorAll(".signal .lamp").forEach((l) => l.classList.remove("on"));
@@ -93,7 +91,7 @@
       const body = await getJSON(`/api/simulations?limit=${window.RECENT_LIMIT}`);
       renderRecordRows(el("recent-body"), body.records, "No simulations saved yet.");
     } catch (err) {
-      el("recent-body").innerHTML = "";
+      el("recent-body").replaceChildren();
       showError(err.message);
     }
   }
@@ -109,15 +107,31 @@
     e.preventDefault();
     const result = validateManual(manualInput.value);
     if (result.error) {
-      manualInput.classList.add("is-invalid");
+      manualInput.classList.add("invalid");
+      manualInput.setAttribute("aria-invalid", "true");
       manualError.textContent = result.error;
       return; // invalid values are never saved (TC10-TC13)
     }
-    manualInput.classList.remove("is-invalid");
+    clearManualError();
     runSimulation(result.value);
   });
 
-  manualInput.addEventListener("input", () => manualInput.classList.remove("is-invalid"));
+  function clearManualError() {
+    manualInput.classList.remove("invalid");
+    manualInput.removeAttribute("aria-invalid");
+    manualError.textContent = "";
+  }
+  manualInput.addEventListener("input", clearManualError);
+
+  // Keyboard shortcut: S runs a random simulation (ignored while typing).
+  document.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() !== "s" || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
+    if (simulateBtn.disabled) return;
+    e.preventDefault();
+    simulateBtn.click();
+  });
 
   loadRecent();
 })();

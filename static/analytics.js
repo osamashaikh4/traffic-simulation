@@ -3,61 +3,73 @@
 (function () {
   "use strict";
 
-  const { COLORS, getJSON, showError } = window.Traffic;
+  const { cssVar, colors, getJSON, showError } = window.Traffic;
   const RULES = window.TRAFFIC_RULES;
-  const INK = "#5f6368";
-  const GRID = "#eceff1";
   const el = (id) => document.getElementById(id);
+  let charts = [];
+  let data = null;
 
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  Chart.defaults.color = INK;
+  function theme() {
+    return {
+      ink: cssVar("--text-3"),
+      text: cssVar("--text"),
+      grid: cssVar("--border"),
+      line: cssVar("--text-3"),
+      surface: cssVar("--panel"),
+      colors: colors(),
+    };
+  }
 
-  const recessiveScales = (extraY = {}) => ({
-    x: { grid: { display: false }, border: { color: GRID } },
-    y: { beginAtZero: true, grid: { color: GRID }, border: { display: false },
-         ticks: { precision: 0 }, ...extraY },
-  });
+  function scales(t, extraY = {}) {
+    return {
+      x: { grid: { display: false }, border: { color: t.grid }, ticks: { color: t.ink } },
+      y: {
+        beginAtZero: true, grid: { color: t.grid }, border: { display: false },
+        ticks: { precision: 0, color: t.ink }, ...extraY,
+        title: extraY.title ? { ...extraY.title, color: t.ink } : undefined,
+      },
+    };
+  }
 
-  // Draws dashed horizontal lines at the Low/Medium upper limits (10 and 25 by default).
+  // Dashed horizontal lines at the Low/Medium upper limits, labelled in the right padding.
   const boundaryLines = {
     id: "boundaryLines",
-    afterDatasetsDraw(chart) {
-      const { ctx, chartArea, scales } = chart;
+    afterDatasetsDraw(chart, _args, opts) {
+      const { ctx, chartArea, scales: s } = chart;
       ctx.save();
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = "#9aa0a6";
-      ctx.fillStyle = INK;
+      ctx.strokeStyle = opts.color;
+      ctx.fillStyle = opts.ink;
       ctx.font = "11px " + Chart.defaults.font.family;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       RULES.slice(0, -1).forEach((r) => {
-        const y = scales.y.getPixelForValue(r.max + 0.5);
+        const y = s.y.getPixelForValue(r.max + 0.5);
         ctx.beginPath();
         ctx.moveTo(chartArea.left, y);
         ctx.lineTo(chartArea.right, y);
         ctx.stroke();
-        // Label sits in the right-hand padding, clear of the data points.
         ctx.fillText(`${r.density} ≤ ${r.max}`, chartArea.right + 8, y);
       });
       ctx.restore();
     },
   };
 
-  // Writes each bar's value above it (selective direct labels).
+  // Value (and optional share) above each bar - selective direct labels.
   const barValueLabels = {
     id: "barValueLabels",
     afterDatasetsDraw(chart, _args, opts) {
       const { ctx } = chart;
-      const data = chart.data.datasets[0].data;
-      const total = data.reduce((a, b) => a + b, 0);
+      const values = chart.data.datasets[0].data;
+      const total = values.reduce((a, b) => a + b, 0);
       ctx.save();
-      ctx.fillStyle = "#202124";
+      ctx.fillStyle = opts.color;
       ctx.font = "600 12px " + Chart.defaults.font.family;
       ctx.textAlign = "center";
       chart.getDatasetMeta(0).data.forEach((bar, i) => {
-        if (!data[i] && !opts.showZero) return;
-        const text = opts.percent && total ? `${data[i]} (${Math.round((data[i] / total) * 100)}%)` : `${data[i]}`;
+        if (!values[i] && !opts.showZero) return;
+        const text = opts.percent && total ? `${values[i]} (${Math.round((values[i] / total) * 100)}%)` : `${values[i]}`;
         ctx.fillText(text, bar.x, bar.y - 6);
       });
       ctx.restore();
@@ -67,36 +79,38 @@
   function renderKpis(s) {
     el("kpi-runs").textContent = s.total_runs;
     el("kpi-avg").textContent = s.avg_count;
-    el("kpi-green").textContent = `${s.avg_green} s`;
+    el("kpi-green").innerHTML = `${s.avg_green}<span class="unit"> s</span>`;
     el("kpi-range").textContent = `${s.min_count}–${s.max_count}`;
   }
 
-  function renderRunsChart(recent) {
-    const colors = recent.map((r) => COLORS[r.density_level]);
-    new Chart(el("runs-chart"), {
+  function runsChart(t, recent) {
+    const pointColors = recent.map((r) => t.colors[r.density_level]);
+    return new Chart(el("runs-chart"), {
       type: "line",
       data: {
         labels: recent.map((r) => `#${r.traffic_id}`),
         datasets: [{
           label: "Vehicle count",
           data: recent.map((r) => r.vehicle_count),
-          borderColor: "#80868b",
+          borderColor: t.line,
           borderWidth: 2,
-          pointBackgroundColor: colors,
-          pointBorderColor: "#fff",
+          pointBackgroundColor: pointColors,
+          pointBorderColor: t.surface,
           pointBorderWidth: 2,
           pointRadius: 5,
           pointHoverRadius: 7,
           tension: 0,
+          clip: false, // keep points at 0 and 50 fully visible
         }],
       },
       options: {
         maintainAspectRatio: false,
-        layout: { padding: { right: 84 } },
+        layout: { padding: { right: 84, top: 8 } },
         interaction: { mode: "index", intersect: false },
-        scales: recessiveScales({ min: 0, max: 50, title: { display: true, text: "Vehicles" } }),
+        scales: scales(t, { min: 0, max: 50, title: { display: true, text: "Vehicles" } }),
         plugins: {
           legend: { display: false },
+          boundaryLines: { color: t.ink, ink: t.ink },
           tooltip: {
             callbacks: {
               title: (items) => {
@@ -116,16 +130,16 @@
     });
   }
 
-  function renderDensityChart(totals) {
+  function densityChart(t, totals) {
     const levels = RULES.map((r) => r.density);
-    new Chart(el("density-chart"), {
+    return new Chart(el("density-chart"), {
       type: "bar",
       data: {
         labels: levels,
         datasets: [{
           label: "Runs",
           data: levels.map((l) => totals[l]),
-          backgroundColor: levels.map((l) => COLORS[l]),
+          backgroundColor: levels.map((l) => t.colors[l]),
           borderRadius: { topLeft: 4, topRight: 4 },
           borderSkipped: "bottom",
           maxBarThickness: 64,
@@ -134,10 +148,10 @@
       options: {
         maintainAspectRatio: false,
         layout: { padding: { top: 22 } },
-        scales: recessiveScales(),
+        scales: scales(t),
         plugins: {
           legend: { display: false },
-          barValueLabels: { percent: true, showZero: true },
+          barValueLabels: { percent: true, showZero: true, color: t.text },
           tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y} runs` } },
         },
       },
@@ -145,15 +159,15 @@
     });
   }
 
-  function renderDistributionChart(buckets) {
-    new Chart(el("distribution-chart"), {
+  function distributionChart(t, buckets) {
+    return new Chart(el("distribution-chart"), {
       type: "bar",
       data: {
         labels: buckets.map((b) => b.label),
         datasets: [{
           label: "Runs",
           data: buckets.map((b) => b.runs),
-          backgroundColor: buckets.map((b) => COLORS[b.density]),
+          backgroundColor: buckets.map((b) => t.colors[b.density]),
           borderRadius: { topLeft: 4, topRight: 4 },
           borderSkipped: "bottom",
           categoryPercentage: 0.92,
@@ -163,10 +177,10 @@
       options: {
         maintainAspectRatio: false,
         layout: { padding: { top: 22 } },
-        scales: recessiveScales({ title: { display: true, text: "Runs" } }),
+        scales: scales(t, { title: { display: true, text: "Runs" } }),
         plugins: {
           legend: { display: false },
-          barValueLabels: { percent: false, showZero: false },
+          barValueLabels: { percent: false, showZero: false, color: t.text },
           tooltip: {
             callbacks: {
               title: (items) => `${items[0].label} vehicles`,
@@ -179,22 +193,33 @@
     });
   }
 
+  function drawCharts() {
+    charts.forEach((c) => c.destroy());
+    const t = theme();
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.color = t.ink;
+    charts = [runsChart(t, data.recent), densityChart(t, data.totals), distributionChart(t, data.distribution)];
+  }
+
   async function load() {
     try {
-      const data = await getJSON("/api/analytics");
+      data = await getJSON("/api/analytics");
       if (!data.summary.total_runs) {
-        el("empty-state").classList.remove("d-none");
+        el("empty-state").hidden = false;
         return;
       }
-      el("analytics").classList.remove("d-none");
+      el("analytics").hidden = false;
       renderKpis(data.summary);
-      renderRunsChart(data.recent);
-      renderDensityChart(data.totals);
-      renderDistributionChart(data.distribution);
+      drawCharts();
     } catch (err) {
       showError(err.message);
     }
   }
+
+  window.addEventListener("themechange", () => { if (data && data.summary.total_runs) drawCharts(); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (data && data.summary.total_runs) drawCharts();
+  });
 
   load();
 })();

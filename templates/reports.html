@@ -1,49 +1,64 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon, status %}
 {% block title %}Reports{% endblock %}
 {% block heading %}Reports{% endblock %}
-{% block subheading %}Every traffic simulation that has been run and saved.{% endblock %}
+{% block meta %}Every traffic simulation that has been run and saved{% endblock %}
 
-{% macro filter_link(value, label, count) -%}
-  <a class="btn btn-sm {% if density == value %}btn-dark{% else %}btn-outline-secondary{% endif %}"
-     href="{{ url_for('reports', density=value) if value else url_for('reports') }}"
-     {% if density == value %}aria-current="true"{% endif %}>
-    {{ label }} <span class="badge text-bg-light ms-1">{{ count }}</span>
-  </a>
-{%- endmacro %}
+{% block actions %}
+  {% if total %}
+    <a class="btn" href="{{ url_for('export_reports', density=density) }}" download>
+      {{ icon('download', 14) }} Export CSV{% if density %} · {{ density }}{% endif %}
+    </a>
+  {% else %}
+    <button class="btn" disabled>{{ icon('download', 14) }} Export CSV</button>
+  {% endif %}
+  <button id="clear-btn" class="btn btn-ghost btn-danger" {% if not totals.values()|sum %}disabled{% endif %}>
+    {{ icon('trash', 14) }} <span>Clear all</span>
+  </button>
+{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <div class="d-flex flex-wrap gap-2" role="group" aria-label="Filter by density">
-      {{ filter_link(None, 'All', totals.values()|sum) }}
-      {{ filter_link('Low', 'Low', totals.Low) }}
-      {{ filter_link('Medium', 'Medium', totals.Medium) }}
-      {{ filter_link('High', 'High', totals.High) }}
-    </div>
-    <button id="clear-btn" class="btn btn-sm btn-outline-danger" {% if not totals.values()|sum %}disabled{% endif %}>
-      <i class="bi bi-trash" aria-hidden="true"></i> Clear all records
-    </button>
+  <div class="toolbar">
+    <nav class="tabs" aria-label="Filter by density">
+      {% for value, label, count in [(None, 'All', totals.values()|sum), ('Low', 'Low', totals.Low), ('Medium', 'Medium', totals.Medium), ('High', 'High', totals.High)] %}
+        <a class="tab {% if density == value %}active{% endif %}"
+           href="{{ url_for('reports', density=value, per_page=per_page_arg) }}"
+           {% if density == value %}aria-current="true"{% endif %}>
+          {% if value %}<span class="dot" style="background: var(--{{ value|lower }})" aria-hidden="true"></span>{% endif %}
+          {{ label }} <span class="count">{{ count }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+    <form class="per-page" method="get" action="{{ url_for('reports') }}">
+      {% if density %}<input type="hidden" name="density" value="{{ density }}">{% endif %}
+      <label for="per-page">Rows per page</label>
+      <select id="per-page" name="per_page" class="select" onchange="this.form.submit()">
+        {% for n in page_sizes %}<option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn" type="submit">Apply</button></noscript>
+    </form>
   </div>
 
-  <div id="request-error" class="alert alert-danger d-none" role="alert"></div>
+  <div id="request-error" class="callout" role="alert" hidden style="margin-bottom:12px">{{ icon('alert') }}<span></span></div>
 
-  <div class="card">
-    <div class="table-responsive">
-      <table class="table table-striped mb-0 align-middle">
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="table">
         <thead>
-          <tr><th>#</th><th>Scenario</th><th>Vehicle count</th><th>Density</th><th>Green time</th><th>Saved at</th></tr>
+          <tr><th>#</th><th>Scenario</th><th class="num">Vehicle count</th><th>Density</th><th class="num">Green time</th><th>Saved at</th></tr>
         </thead>
         <tbody>
         {% for r in records %}
           <tr>
-            <td>{{ r.traffic_id }}</td>
+            <td class="id">{{ r.traffic_id }}</td>
             <td>{{ r.scenario_label or '—' }}</td>
-            <td>{{ r.vehicle_count }}</td>
-            <td><span class="badge density-{{ r.density_level|lower }}">{{ r.density_level }}</span></td>
-            <td>{{ r.green_time_seconds }} s</td>
-            <td>{{ r.created_at }}</td>
+            <td class="num">{{ r.vehicle_count }}</td>
+            <td>{{ status(r.density_level) }}</td>
+            <td class="num">{{ r.green_time_seconds }} s</td>
+            <td class="time">{{ r.created_at }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-muted py-4 text-center">
+          <tr><td colspan="6" class="empty">
             {% if density %}No {{ density }} results yet.{% else %}No simulations saved yet. Run one from the <a href="{{ url_for('home') }}">Home</a> page.{% endif %}
           </td></tr>
         {% endfor %}
@@ -51,28 +66,31 @@
       </table>
     </div>
     {% if total %}
-    <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <span class="small text-muted">Showing {{ first }}–{{ last }} of {{ total }}</span>
+    <div class="panel-foot">
+      <span class="num">Showing {{ first }}–{{ last }} of {{ total }}</span>
       {% if pages > 1 %}
-      <nav aria-label="Report pages">
-        <ul class="pagination pagination-sm mb-0">
-          <li class="page-item {% if page == 1 %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('reports', density=density, page=page - 1) }}">Previous</a>
-          </li>
-          {% for p in range(1, pages + 1) %}
-            {% if p == 1 or p == pages or (p - page)|abs <= 2 %}
-              <li class="page-item {% if p == page %}active{% endif %}">
-                <a class="page-link" href="{{ url_for('reports', density=density, page=p) }}"
-                   {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
-              </li>
-            {% elif (p - page)|abs == 3 %}
-              <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      <nav class="pager" aria-label="Report pages">
+        {% if page > 1 %}
+          <a href="{{ url_for('reports', density=density, per_page=per_page_arg, page=page - 1) }}" aria-label="Previous page">{{ icon('chevron-left', 14) }}</a>
+        {% else %}
+          <span class="disabled" aria-hidden="true">{{ icon('chevron-left', 14) }}</span>
+        {% endif %}
+        {% for p in range(1, pages + 1) %}
+          {% if p == 1 or p == pages or (p - page)|abs <= 1 %}
+            {% if p == page %}
+              <span class="current" aria-current="page">{{ p }}</span>
+            {% else %}
+              <a href="{{ url_for('reports', density=density, per_page=per_page_arg, page=p) }}">{{ p }}</a>
             {% endif %}
-          {% endfor %}
-          <li class="page-item {% if page == pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('reports', density=density, page=page + 1) }}">Next</a>
-          </li>
-        </ul>
+          {% elif (p - page)|abs == 2 %}
+            <span aria-hidden="true">…</span>
+          {% endif %}
+        {% endfor %}
+        {% if page < pages %}
+          <a href="{{ url_for('reports', density=density, per_page=per_page_arg, page=page + 1) }}" aria-label="Next page">{{ icon('chevron-right', 14) }}</a>
+        {% else %}
+          <span class="disabled" aria-hidden="true">{{ icon('chevron-right', 14) }}</span>
+        {% endif %}
       </nav>
       {% endif %}
     </div>
@@ -88,8 +106,8 @@
       if (res.ok) { window.location = "{{ url_for('reports') }}"; return; }
       const body = await res.json().catch(() => ({}));
       const box = document.getElementById("request-error");
-      box.textContent = body.error || "Could not clear records.";
-      box.classList.remove("d-none");
+      box.querySelector("span").textContent = body.error || "Could not clear records.";
+      box.hidden = false;
     });
   </script>
 {% endblock %}

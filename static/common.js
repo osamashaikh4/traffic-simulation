@@ -2,34 +2,48 @@
 window.Traffic = (function () {
   "use strict";
 
-  // Validated with the dataviz palette checker (CVD-safe; amber always ships with a text label).
-  const COLORS = { Low: "#3a9f6c", Medium: "#d4a017", High: "#9b1c1c" };
+  // Reads a CSS custom property so charts follow the current light/dark theme.
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-  function densityBadge(level) {
-    const badge = document.createElement("span");
-    badge.className = `badge density-${level.toLowerCase()}`;
-    badge.textContent = level;
-    return badge;
+  // Density colours (validated CVD-safe in both themes; always paired with a text label).
+  const colors = () => ({ Low: cssVar("--low"), Medium: cssVar("--medium"), High: cssVar("--high") });
+
+  function statusEl(level) {
+    const span = document.createElement("span");
+    span.className = `status status-${level.toLowerCase()}`;
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.setAttribute("aria-hidden", "true");
+    span.append(dot, level);
+    return span;
   }
 
   // Renders records into a <tbody> with the standard six columns.
   function renderRecordRows(tbody, records, emptyMessage) {
     if (records.length === 0) {
-      tbody.innerHTML = "";
-      const tr = tbody.insertRow();
+      const tr = document.createElement("tr");
       const td = tr.insertCell();
       td.colSpan = 6;
-      td.className = "text-muted";
+      td.className = "empty";
       td.textContent = emptyMessage;
+      tbody.replaceChildren(tr);
       return;
     }
     tbody.replaceChildren(...records.map((r) => {
       const tr = document.createElement("tr");
-      [r.traffic_id, r.scenario_label || "—", r.vehicle_count, densityBadge(r.density_level),
-       `${r.green_time_seconds} s`, r.created_at].forEach((value) => {
+      const cells = [
+        ["id", r.traffic_id],
+        ["", r.scenario_label || "—"],
+        ["num", r.vehicle_count],
+        ["", statusEl(r.density_level)],
+        ["num", `${r.green_time_seconds} s`],
+        ["time", r.created_at],
+      ];
+      for (const [cls, value] of cells) {
         const td = tr.insertCell();
+        if (cls) td.className = cls;
         if (value instanceof Node) td.appendChild(value); else td.textContent = value;
-      });
+      }
       return tr;
     }));
   }
@@ -44,9 +58,9 @@ window.Traffic = (function () {
   function showError(message) {
     const box = document.getElementById("request-error");
     if (!box) return;
-    box.textContent = message;
-    box.classList.toggle("d-none", !message);
+    box.querySelector("span").textContent = message || "";
+    box.hidden = !message;
   }
 
-  return { COLORS, densityBadge, renderRecordRows, getJSON, showError };
+  return { cssVar, colors, statusEl, renderRecordRows, getJSON, showError };
 })();

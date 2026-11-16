@@ -97,7 +97,7 @@ def test_clear_history(client, row_count):
 
 def test_dashboard_page_renders(client):
     html = client.get("/").get_data(as_text=True)
-    assert "Simulate Traffic" in html
+    assert "Simulate traffic" in html
 
 
 # --- Dashboard pages: Home, Reports, Analytics ----------------------------
@@ -140,10 +140,23 @@ def test_reports_lists_all_runs_and_filters_by_density(client):
 
 def test_reports_pagination(client):
     _run(client, *range(0, 30))
+    page1 = client.get("/reports").get_data(as_text=True)
+    assert "Showing 1–20 of 30" in page1  # default 20 rows per page
     page2 = client.get("/reports?page=2").get_data(as_text=True)
-    assert "Showing 26–30 of 30" in page2
+    assert "Showing 21–30 of 30" in page2
     # out-of-range page numbers are clamped
-    assert "Showing 26–30 of 30" in client.get("/reports?page=99").get_data(as_text=True)
+    assert "Showing 21–30 of 30" in client.get("/reports?page=99").get_data(as_text=True)
+
+
+def test_reports_rows_per_page(client):
+    _run(client, *range(0, 30))
+    assert "Showing 1–10 of 30" in client.get("/reports?per_page=10").get_data(as_text=True)
+    html = client.get("/reports?per_page=10&page=3").get_data(as_text=True)
+    assert "Showing 21–30 of 30" in html
+    assert "per_page=10" in html  # page links keep the chosen size
+    assert "Showing 1–30 of 30" in client.get("/reports?per_page=50").get_data(as_text=True)
+    # unsupported sizes fall back to the default of 20
+    assert "Showing 1–20 of 30" in client.get("/reports?per_page=7").get_data(as_text=True)
 
 
 def test_reports_empty_state(client):
@@ -170,3 +183,30 @@ def test_analytics_api_empty(client, app):
     data = client.get("/api/analytics").get_json()
     assert data["summary"]["total_runs"] == 0
     assert data["summary"]["avg_count"] is None
+
+
+def test_reports_export_csv(client):
+    _run(client, 3, 14, 27)
+    client.post("/api/simulations", json={"vehicle_count": 40, "scenario_label": "=HYPERLINK(1)"})
+    res = client.get("/reports/export.csv")
+    assert res.status_code == 200
+    assert res.mimetype == "text/csv"
+    assert "attachment" in res.headers["Content-Disposition"]
+    lines = res.get_data(as_text=True).lstrip("\ufeff").splitlines()
+    assert lines[0] == "ID,Scenario,Vehicle count,Density,Green time (s),Saved at"
+    assert len(lines) == 5
+    assert ",'=HYPERLINK(1),40,High,45," in lines[1]  # newest first, formula neutralised
+
+
+def test_reports_export_csv_respects_filter(client):
+    _run(client, 3, 14, 27, 49)
+    res = client.get("/reports/export.csv?density=High")
+    assert "-high.csv" in res.headers["Content-Disposition"]
+    rows = res.get_data(as_text=True).splitlines()[1:]
+    assert len(rows) == 2 and all(",High," in r for r in rows)
+    assert client.get("/reports/export.csv?density=Bogus").status_code == 400
+
+
+def test_reports_export_csv_empty(client):
+    lines = client.get("/reports/export.csv").get_data(as_text=True).splitlines()
+    assert len(lines) == 1  # header only

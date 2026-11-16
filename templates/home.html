@@ -1,122 +1,96 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon, status %}
 {% block title %}Home{% endblock %}
 {% block heading %}Home{% endblock %}
-{% block subheading %}Run a traffic simulation and see the recommended green time.{% endblock %}
+{% block meta %}Run a traffic simulation and see the recommended green time{% endblock %}
 
 {% block content %}
   <!-- Run a simulation (UC1) -->
-  <section class="card mb-4">
-    <div class="card-body">
-      <h2 class="h5 card-title">Run a traffic simulation</h2>
-      <div class="row g-3 align-items-end">
-        <div class="col-md-5">
-          <label for="scenario-label" class="form-label">Scenario label <span class="text-muted">(optional)</span></label>
-          <input id="scenario-label" class="form-control" maxlength="50" placeholder="e.g. Test Run 1">
+  <section class="panel" aria-labelledby="run-heading">
+    <div class="panel-head"><h2 id="run-heading">Run simulation</h2>
+      <span class="meta">Random count from {{ min_count }} to {{ max_count }} vehicles</span></div>
+    <div class="panel-body">
+      <div class="run-row">
+        <div class="field field-grow">
+          <label for="scenario-label">Scenario label <span class="hint">optional</span></label>
+          <input id="scenario-label" class="input" maxlength="50" placeholder="e.g. Test Run 1" autocomplete="off">
         </div>
-        <div class="col-md-auto">
-          <button id="simulate-btn" class="btn btn-primary btn-lg">Simulate Traffic</button>
-        </div>
-      </div>
-
-      <details class="mt-3">
-        <summary>Manual test value (for boundary testing)</summary>
-        <form id="manual-form" class="row g-2 mt-2 align-items-start" novalidate>
-          <div class="col-sm-4 col-md-3">
-            <label for="manual-count" class="visually-hidden">Vehicle count</label>
-            <input id="manual-count" class="form-control" inputmode="numeric"
-                   placeholder="Whole number {{ min_count }}–{{ max_count }}" aria-describedby="manual-error">
-            <div id="manual-error" class="invalid-feedback"></div>
+        <form id="manual-form" class="field" novalidate>
+          <label for="manual-count">Manual test value <span class="hint">for boundary testing</span></label>
+          <div class="manual">
+            <input id="manual-count" class="input num" inputmode="numeric" autocomplete="off"
+                   placeholder="{{ min_count }}–{{ max_count }}" aria-describedby="manual-error">
+            <button type="submit" class="btn">Run</button>
           </div>
-          <div class="col-auto">
-            <button type="submit" class="btn btn-outline-primary">Run with this value</button>
-          </div>
+          <div id="manual-error" class="field-error" role="alert"></div>
         </form>
-      </details>
-
-      <div id="request-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+        <span class="divider" aria-hidden="true"></span>
+        <button id="simulate-btn" class="btn btn-primary btn-lg" aria-keyshortcuts="S">
+          {{ icon('play', 14) }} Simulate traffic <kbd>S</kbd>
+        </button>
+      </div>
+      <div id="request-error" class="callout" role="alert" hidden style="margin-top:14px">{{ icon('alert') }}<span></span></div>
     </div>
   </section>
 
   <!-- Current result (FR5) -->
-  <section aria-labelledby="result-heading" class="mb-4">
-    <h2 id="result-heading" class="h5">Current result</h2>
-    <div class="row g-3">
-      <div class="col-md-4">
-        <div class="card h-100 result-card">
-          <div class="card-body">
-            <div class="text-muted small">Vehicle count</div>
-            <div id="result-count" class="display-5 fw-semibold">&ndash;</div>
-            <div class="text-muted small">vehicles in sample observation</div>
-          </div>
-        </div>
+  <section class="panel" aria-labelledby="result-heading">
+    <div class="panel-head"><h2 id="result-heading">Current result</h2></div>
+    <div class="metrics" id="result-metrics">
+      <div class="metric">
+        <div class="metric-label">Vehicle count</div>
+        <div class="metric-value" id="result-count">–</div>
+        <div class="metric-sub">vehicles in sample observation</div>
       </div>
-      <div class="col-md-4">
-        <div class="card h-100 result-card">
-          <div class="card-body">
-            <div class="text-muted small">Traffic density</div>
-            <div id="result-density" class="display-5 fw-semibold">&ndash;</div>
-            <div id="result-range" class="text-muted small">&nbsp;</div>
-          </div>
-        </div>
+      <div class="metric">
+        <div class="metric-label">Traffic density</div>
+        <div class="metric-value" id="result-density-wrap"><span class="big-dot" aria-hidden="true"></span><span id="result-density">–</span></div>
+        <div class="metric-sub" id="result-range">&nbsp;</div>
       </div>
-      <div class="col-md-4">
-        <div class="card h-100 result-card">
-          <div class="card-body d-flex justify-content-between align-items-center">
-            <div>
-              <div class="text-muted small">Recommended green time</div>
-              <div id="result-green" class="display-5 fw-semibold">&ndash;</div>
-              <div class="text-muted small">recommendation only</div>
-            </div>
-            <div class="signal" aria-hidden="true">
-              <span class="lamp red on"></span><span class="lamp amber"></span><span class="lamp green"></span>
-            </div>
-          </div>
+      <div class="metric">
+        <div class="metric-label">Recommended green time</div>
+        <div class="metric-value">
+          <span id="result-green">–</span>
+          <span class="signal" aria-hidden="true"><span class="lamp red on"></span><span class="lamp amber"></span><span class="lamp green"></span></span>
         </div>
+        <div class="metric-sub">recommendation only</div>
       </div>
     </div>
-    <p id="result-explanation" class="mt-3 mb-0 text-body-secondary">Click <strong>Simulate Traffic</strong> to generate a sample vehicle count.</p>
+    <div class="panel-foot"><span id="result-explanation" class="explain">Press <strong>Simulate traffic</strong> to generate a sample vehicle count.</span></div>
   </section>
 
-  <div class="row g-4">
+  <div class="grid-2">
     <!-- Rules (section 4.5) -->
-    <section class="col-xl-5">
-      <div class="card h-100">
-        <div class="card-body">
-          <h2 class="h5 card-title">Density and green-time rules</h2>
-          <table class="table table-sm mb-2" id="rules-table">
-            <thead><tr><th>Vehicle count</th><th>Density</th><th>Green time</th></tr></thead>
-            <tbody>
-            {% for r in rules %}
-              <tr data-density="{{ r.density }}">
-                <td>{{ r.min }}–{{ r.max }}</td>
-                <td><span class="badge density-{{ r.density|lower }}">{{ r.density }}</span></td>
-                <td>{{ r.green_time }} seconds</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-          <p class="small text-muted mb-0">Thresholds and durations are illustrative prototype settings, not traffic-engineering standards.</p>
-        </div>
+    <section class="panel" aria-labelledby="rules-heading">
+      <div class="panel-head"><h2 id="rules-heading">Rules</h2><span class="meta">Density and green time</span></div>
+      <div class="table-wrap">
+        <table class="table" id="rules-table">
+          <thead><tr><th>Vehicle count</th><th>Density</th><th>Green time</th></tr></thead>
+          <tbody>
+          {% for r in rules %}
+            <tr data-density="{{ r.density }}">
+              <td class="num">{{ r.min }}–{{ r.max }}</td>
+              <td>{{ status(r.density) }}</td>
+              <td class="num">{{ r.green_time }} s</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
+      <div class="panel-foot">Illustrative prototype settings, not traffic-engineering standards.</div>
     </section>
 
     <!-- Recent results -->
-    <section class="col-xl-7" aria-labelledby="recent-heading">
-      <div class="card h-100">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h2 id="recent-heading" class="h5 card-title mb-0">Recent results</h2>
-            <a href="{{ url_for('reports') }}" class="small">View all reports <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
-          </div>
-          <div class="table-responsive">
-            <table class="table mb-0">
-              <thead><tr><th>#</th><th>Scenario</th><th>Count</th><th>Density</th><th>Green</th><th>Saved at</th></tr></thead>
-              <tbody id="recent-body">
-                <tr><td colspan="6" class="text-muted">Loading&hellip;</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+    <section class="panel" aria-labelledby="recent-heading">
+      <div class="panel-head"><h2 id="recent-heading">Recent results</h2><span class="meta">Latest {{ recent_limit }}</span>
+        <a href="{{ url_for('reports') }}" class="link">View all {{ icon('arrow-right', 14) }}</a></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>#</th><th>Scenario</th><th class="num">Count</th><th>Density</th><th class="num">Green</th><th>Saved</th></tr></thead>
+          <tbody id="recent-body">
+            <tr><td colspan="6" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
   </div>
