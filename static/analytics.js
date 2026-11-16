@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  const { cssVar, colors, getJSON, showError } = window.Traffic;
+  const { cssVar, colors, getJSON, showError, boundaryLines } = window.Traffic;
   const RULES = window.TRAFFIC_RULES;
   const el = (id) => document.getElementById(id);
   let charts = [];
@@ -31,30 +31,6 @@
     };
   }
 
-  // Dashed horizontal lines at the Low/Medium upper limits, labelled in the right padding.
-  const boundaryLines = {
-    id: "boundaryLines",
-    afterDatasetsDraw(chart, _args, opts) {
-      const { ctx, chartArea, scales: s } = chart;
-      ctx.save();
-      ctx.setLineDash([4, 4]);
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = opts.color;
-      ctx.fillStyle = opts.ink;
-      ctx.font = "13px " + Chart.defaults.font.family;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      RULES.slice(0, -1).forEach((r) => {
-        const y = s.y.getPixelForValue(r.max + 0.5);
-        ctx.beginPath();
-        ctx.moveTo(chartArea.left, y);
-        ctx.lineTo(chartArea.right, y);
-        ctx.stroke();
-        ctx.fillText(`${r.density} ≤ ${r.max}`, chartArea.right + 8, y);
-      });
-      ctx.restore();
-    },
-  };
 
   // Value (and optional share) above each bar - selective direct labels.
   const barValueLabels = {

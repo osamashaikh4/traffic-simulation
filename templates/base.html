@@ -5,6 +5,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} · Smart Traffic</title>
+  <script>
+    // Restore the collapsed sidebar before first paint (desktop only).
+    try { if (localStorage.getItem("sidebar") === "collapsed") document.documentElement.classList.add("sidebar-collapsed"); } catch (e) {}
+  </script>
   <link rel="preload" href="{{ url_for('static', filename='vendor/inter/inter-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -20,12 +24,18 @@
       </div>
       <nav class="nav">
         {% for endpoint, label, ic in nav %}
-          <a class="nav-item {% if request.endpoint == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}"
+          <a class="nav-item {% if request.endpoint == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}" title="{{ label }}"
              {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>
             {{ icon(ic, 18) }}<span>{{ label }}</span>
           </a>
         {% endfor %}
       </nav>
+      <div class="sidebar-foot">
+        <button class="nav-item collapse-btn" type="button" id="collapse-btn" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
+          <span class="when-expanded">{{ icon('sidebar', 18) }}<span>Collapse</span></span>
+          <span class="when-collapsed">{{ icon('sidebar-open', 18) }}</span>
+        </button>
+      </div>
     </aside>
     <div class="backdrop" data-close-sidebar></div>
 
@@ -56,6 +66,22 @@
       menuBtn.addEventListener("click", () => setOpen(true));
       document.querySelectorAll("[data-close-sidebar]").forEach((el) => el.addEventListener("click", () => setOpen(false)));
       document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+
+      // Desktop: collapse the sidebar to icons only, remembered per browser.
+      const collapseBtn = document.getElementById("collapse-btn");
+      const syncCollapse = () => {
+        const collapsed = root.classList.contains("sidebar-collapsed");
+        collapseBtn.setAttribute("aria-expanded", String(!collapsed));
+        collapseBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+        collapseBtn.setAttribute("aria-label", collapseBtn.title);
+      };
+      collapseBtn.addEventListener("click", () => {
+        const collapsed = root.classList.toggle("sidebar-collapsed");
+        try { localStorage.setItem("sidebar", collapsed ? "collapsed" : "expanded"); } catch (e) {}
+        syncCollapse();
+        window.dispatchEvent(new Event("resize")); // let charts re-fit the new width
+      });
+      syncCollapse();
     })();
   </script>
   {% block scripts %}{% endblock %}

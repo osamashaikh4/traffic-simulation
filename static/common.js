@@ -62,5 +62,31 @@ window.Traffic = (function () {
     box.hidden = !message;
   }
 
-  return { cssVar, colors, statusEl, renderRecordRows, getJSON, showError };
+  // Chart.js plugin: dashed horizontal lines at the Low/Medium upper limits,
+  // labelled in the chart's right padding. Reads the page's window.TRAFFIC_RULES.
+  const boundaryLines = {
+    id: "boundaryLines",
+    afterDatasetsDraw(chart, _args, opts) {
+      const { ctx, chartArea, scales } = chart;
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = opts.color;
+      ctx.fillStyle = opts.ink;
+      ctx.font = "13px " + Chart.defaults.font.family;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      window.TRAFFIC_RULES.slice(0, -1).forEach((r) => {
+        const y = scales.y.getPixelForValue(r.max + 0.5);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y);
+        ctx.lineTo(chartArea.right, y);
+        ctx.stroke();
+        ctx.fillText(`${r.density} ≤ ${r.max}`, chartArea.right + 8, y);
+      });
+      ctx.restore();
+    },
+  };
+
+  return { cssVar, colors, statusEl, renderRecordRows, getJSON, showError, boundaryLines };
 })();

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  const { renderRecordRows, getJSON, showError } = window.Traffic;
+  const { renderRecordRows, getJSON, showError, colors, cssVar, boundaryLines } = window.Traffic;
   const RULES = window.TRAFFIC_RULES;
   const RANGE = window.COUNT_RANGE;
 
@@ -86,14 +86,86 @@
     document.querySelector(".signal .lamp.green").classList.add("on");
   }
 
+  // One request feeds both the "Recent results" table and the chart.
   async function loadRecent() {
     try {
-      const body = await getJSON(`/api/simulations?limit=${window.RECENT_LIMIT}`);
-      renderRecordRows(el("recent-body"), body.records, "No simulations saved yet.");
+      const body = await getJSON(`/api/simulations?limit=${Math.max(window.RECENT_LIMIT, window.CHART_RUNS)}`);
+      renderRecordRows(el("recent-body"), body.records.slice(0, window.RECENT_LIMIT), "No simulations saved yet.");
+      renderChart(body.records.slice(0, window.CHART_RUNS).reverse()); // oldest on the left
     } catch (err) {
       el("recent-body").replaceChildren();
       showError(err.message);
     }
+  }
+
+  let chart = null;
+
+  function renderChart(runs) {
+    const empty = runs.length === 0;
+    el("runs-chart-box").hidden = empty;
+    el("runs-chart-empty").hidden = !empty;
+    if (empty) return;
+
+    const palette = colors();
+    const ink = cssVar("--text-3");
+    const grid = cssVar("--border");
+    const latest = runs.length - 1;
+    const data = {
+      labels: runs.map((r) => `#${r.traffic_id}`),
+      datasets: [{
+        label: "Vehicle count",
+        data: runs.map((r) => r.vehicle_count),
+        backgroundColor: runs.map((r) => palette[r.density_level]),
+        // Outline the newest run so the latest simulation is easy to spot.
+        borderColor: runs.map((_, i) => (i === latest ? cssVar("--text") : "transparent")),
+        borderWidth: runs.map((_, i) => (i === latest ? 2 : 0)),
+        borderRadius: { topLeft: 4, topRight: 4 },
+        borderSkipped: "bottom",
+        maxBarThickness: 40,
+        categoryPercentage: 0.9,
+        barPercentage: 0.9,
+      }],
+    };
+
+    if (chart) {
+      chart.$runs = runs;
+      chart.data = data;
+      chart.update();
+      return;
+    }
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    Chart.defaults.font.size = 13;
+    Chart.defaults.color = ink;
+    chart = new Chart(el("runs-chart"), {
+      type: "bar",
+      data,
+      options: {
+        maintainAspectRatio: false,
+        layout: { padding: { right: 100, top: 6 } },
+        scales: {
+          x: { grid: { display: false }, border: { color: grid }, ticks: { color: ink, maxRotation: 0, autoSkip: true } },
+          y: { min: 0, max: 50, grid: { color: grid }, border: { display: false }, ticks: { stepSize: 10, color: ink } },
+        },
+        plugins: {
+          legend: { display: false },
+          boundaryLines: { color: ink, ink },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const r = chart.$runs[items[0].dataIndex];
+                return `Run #${r.traffic_id}${r.scenario_label ? " · " + r.scenario_label : ""}`;
+              },
+              label: (ctx) => {
+                const r = chart.$runs[ctx.dataIndex];
+                return `${r.vehicle_count} vehicles · ${r.density_level} · ${r.green_time_seconds} s green`;
+              },
+            },
+          },
+        },
+      },
+      plugins: [boundaryLines],
+    });
+    chart.$runs = runs;
   }
 
   function setBusy(busy) {

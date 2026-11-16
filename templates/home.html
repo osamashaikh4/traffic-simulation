@@ -2,33 +2,31 @@
 {% from "_icons.html" import icon, status %}
 {% block title %}Home{% endblock %}
 {% block heading %}Home{% endblock %}
-{% block meta %}Run a traffic simulation and see the recommended green time{% endblock %}
 
 {% block content %}
   <!-- Run a simulation (UC1) -->
   <section class="panel" aria-labelledby="run-heading">
-    <div class="panel-head"><h2 id="run-heading">Run simulation</h2>
-      <span class="meta">Random count from {{ min_count }} to {{ max_count }} vehicles</span></div>
+    <div class="panel-head"><h2 id="run-heading">Run simulation</h2></div>
     <div class="panel-body">
       <div class="run-row">
         <div class="field field-grow">
-          <label for="scenario-label">Scenario label <span class="hint">optional</span></label>
+          <label for="scenario-label">Label</label>
           <input id="scenario-label" class="input" maxlength="50" placeholder="e.g. Test Run 1" autocomplete="off">
         </div>
         <form id="manual-form" class="field" novalidate>
-          <label for="manual-count">Manual test value <span class="hint">for boundary testing</span></label>
+          <label for="manual-count">Manual test value</label>
           <div class="manual">
             <input id="manual-count" class="input num" inputmode="numeric" autocomplete="off"
                    placeholder="{{ min_count }}–{{ max_count }}" aria-describedby="manual-error">
             <button type="submit" class="btn">Run</button>
           </div>
-          <div id="manual-error" class="field-error" role="alert"></div>
         </form>
         <span class="divider" aria-hidden="true"></span>
         <button id="simulate-btn" class="btn btn-primary btn-lg" aria-keyshortcuts="S">
-          {{ icon('play', 14) }} Simulate traffic <kbd>S</kbd>
+          {{ icon('play', 14) }} Simulate traffic
         </button>
       </div>
+      <div id="manual-error" class="field-error" role="alert"></div>
       <div id="request-error" class="callout" role="alert" hidden style="margin-top:14px">{{ icon('alert') }}<span></span></div>
     </div>
   </section>
@@ -59,10 +57,23 @@
     <div class="panel-foot"><span id="result-explanation" class="explain">Press <strong>Simulate traffic</strong> to generate a sample vehicle count.</span></div>
   </section>
 
+  <!-- Recent runs chart -->
+  <section class="panel" aria-labelledby="chart-heading">
+    <div class="panel-head"><h2 id="chart-heading">Last {{ chart_runs }} runs</h2>
+      <span class="chart-legend" aria-hidden="true">
+        {% for r in rules %}<span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }}</span>{% endfor %}
+      </span>
+    </div>
+    <div class="panel-body">
+      <div class="chart-box short" id="runs-chart-box"><canvas id="runs-chart" role="img" aria-label="Bar chart of vehicle count for the latest simulation runs"></canvas></div>
+      <p class="chart-empty" id="runs-chart-empty" hidden>No simulations yet. Press <strong>Simulate traffic</strong> to see your runs here.</p>
+    </div>
+  </section>
+
   <div class="grid-2">
     <!-- Rules (section 4.5) -->
     <section class="panel" aria-labelledby="rules-heading">
-      <div class="panel-head"><h2 id="rules-heading">Rules</h2><span class="meta">Density and green time</span></div>
+      <div class="panel-head"><h2 id="rules-heading">Rules</h2></div>
       <div class="table-wrap">
         <table class="table" id="rules-table">
           <thead><tr><th>Vehicle count</th><th>Density</th><th>Green time</th></tr></thead>
@@ -77,12 +88,11 @@
           </tbody>
         </table>
       </div>
-      <div class="panel-foot">Illustrative prototype settings, not traffic-engineering standards.</div>
     </section>
 
     <!-- Recent results -->
     <section class="panel" aria-labelledby="recent-heading">
-      <div class="panel-head"><h2 id="recent-heading">Recent results</h2><span class="meta">Latest {{ recent_limit }}</span>
+      <div class="panel-head"><h2 id="recent-heading">Recent results</h2>
         <a href="{{ url_for('reports') }}" class="link">View all {{ icon('arrow-right', 14) }}</a></div>
       <div class="table-wrap">
         <table class="table">
@@ -101,7 +111,9 @@
     window.TRAFFIC_RULES = {{ rules|tojson }};
     window.COUNT_RANGE = {min: {{ min_count }}, max: {{ max_count }}};
     window.RECENT_LIMIT = {{ recent_limit }};
+    window.CHART_RUNS = {{ chart_runs }};
   </script>
+  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
   <script src="{{ url_for('static', filename='common.js') }}"></script>
   <script src="{{ url_for('static', filename='home.js') }}"></script>
 {% endblock %}

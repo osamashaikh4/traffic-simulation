@@ -24,6 +24,7 @@ from validation import ValidationError, parse_scenario_label, parse_vehicle_coun
 
 DENSITY_LEVELS = ("Low", "Medium", "High")
 RECENT_LIMIT = 3          # results shown on the home page
+HOME_CHART_RUNS = 20      # runs shown on the home page chart
 PAGE_SIZES = (10, 20, 50, 100)
 DEFAULT_PAGE_SIZE = 20
 ANALYTICS_RUNS = 50       # runs shown on the "count per run" chart
@@ -88,7 +89,7 @@ def create_app(config=None):
     def home():
         return render_template(
             "home.html", rules=rules_as_dicts(), min_count=MIN_COUNT, max_count=MAX_COUNT,
-            recent_limit=RECENT_LIMIT,
+            recent_limit=RECENT_LIMIT, chart_runs=HOME_CHART_RUNS,
         )
 
     def density_filter():
