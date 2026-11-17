@@ -19,7 +19,7 @@
   <div class="steps">
     <div class="panel step"><span class="step-n">1</span><b>Generate</b><span>A random whole number of vehicles from {{ min_count }} to {{ max_count }}.</span></div>
     <div class="panel step"><span class="step-n">2</span><b>Classify</b><span>The count is matched to the Low, Medium or High density band.</span></div>
-    <div class="panel step"><span class="step-n">3</span><b>Recommend</b><span>Each band has a green time; the matching one is recommended.</span></div>
+    <div class="panel step"><span class="step-n">3</span><b>Recommend</b><span>Each band has a green-time range; more vehicles in the band means more green time.</span></div>
     <div class="panel step"><span class="step-n">4</span><b>Save &amp; show</b><span>The result is stored in MySQL and shown on the dashboard, history and charts.</span></div>
   </div>
 
@@ -29,7 +29,7 @@
       <div class="panel step rule">
         <span class="status status-{{ r.density|lower }}"><span class="dot"></span>{{ r.density }} density</span>
         <b class="num">{{ r.min }}–{{ r.max }} vehicles</b>
-        <span>→ {{ r.green_time }} seconds of green</span>
+        <span>→ {{ r.green_label }} seconds of green</span>
       </div>
     {% endfor %}
   </div>

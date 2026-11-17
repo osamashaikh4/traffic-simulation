@@ -16,12 +16,22 @@ shows a history table and charts.
 | 11–25 | Medium | 30 seconds |
 | 26–50 | High   | 45 seconds |
 
-These are the defaults (in `rules.py`). They can be changed from the **Edit**
-button on the Home page's Rules panel; the active rules are stored in the
-`rule_config` table and apply to the next simulation (saved results keep the
-values they were given). Limits: bands stay contiguous over 0–50 with at least
-one count each, green times 5–120 s. **Reset to defaults** restores the table
-above. The values are illustrative, not engineering standards.
+These are the defaults (in `rules.py`): one fixed time per band.
+
+Everything is editable from **Edit** on the Simulation page's Traffic Rules
+Reference: the Low and Medium upper limits, and for each band a **minimum and
+maximum green time**. Inside a band the green time grows with the vehicle
+count - the band's lowest count gets the minimum, its highest count the
+maximum, evenly in between (rounded to whole seconds). Example: High 26-50
+vehicles with 35-60 s gives 26 -> 35 s, 38 -> 48 s, 50 -> 60 s. Set minimum =
+maximum for a fixed time. The editor previews the result before saving.
+
+The same count with the same rules always gives the same time (NFR3). Active
+rules are stored in the `rule_config` table and apply to the next simulation;
+saved results keep the values they were given. Limits: bands stay contiguous
+over 0-50 with at least one count each; green times 5-120 s; maximum >=
+minimum. **Reset** restores the defaults. The values are illustrative, not
+engineering standards.
 
 ## Requirements
 
@@ -131,7 +141,7 @@ tests/           Automated tests for report chapter 5
 | GET    | `/api/analytics` | Summary figures, density totals, latest 50 runs and count distribution |
 | DELETE | `/api/simulations` | Clear all records |
 | GET    | `/api/rules` | Active rule settings and bands |
-| PUT    | `/api/rules` | Body `{"low_max": 10, "medium_max": 25, "low_green": 15, "medium_green": 30, "high_green": 45}` → saves, or 400 with `error` |
+| PUT    | `/api/rules` | Body `{"low_max": 10, "medium_max": 25, "low_green_min": 15, "low_green_max": 15, "medium_green_min": 30, "medium_green_max": 30, "high_green_min": 45, "high_green_max": 45}` → saves, or 400 with `error` (the older `"low_green": 15` form is still accepted) |
 | DELETE | `/api/rules` | Reset rules to the defaults |
 
 ## Tests

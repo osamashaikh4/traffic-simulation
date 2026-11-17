@@ -130,7 +130,7 @@
       {% for r in rules %}
         <div class="rule-item" data-density="{{ r.density }}">
           <span class="dot" style="background: var(--{{ r.density|lower }})" aria-hidden="true"></span>
-          <div><b>{{ r.density }} Density</b><span>({{ r.min }}–{{ r.max }} vehicles)</span><br><span>→ {{ r.green_time }} seconds</span></div>
+          <div><b>{{ r.density }} Density</b><span>({{ r.min }}–{{ r.max }} vehicles)</span><br><span>→ {{ r.green_label }} seconds</span></div>
         </div>
       {% endfor %}
       <svg class="rules-art" width="86" height="130" viewBox="0 0 86 130" aria-hidden="true">
@@ -144,21 +144,28 @@
     <form id="rules-form" class="rules-form" hidden novalidate>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green (s)</th></tr></thead>
+          <thead><tr><th>Density</th><th class="num">From</th><th class="num">To</th><th class="num">Green min (s)</th><th class="num">Green max (s)</th><th>Preview</th></tr></thead>
           <tbody>
-            <tr><td><span class="status status-low"><span class="dot"></span>Low</span></td><td class="num">{{ min_count }}</td>
+            <tr data-band="low"><td><span class="status status-low"><span class="dot"></span>Low</span></td><td class="num">{{ min_count }}</td>
               <td><input class="input num" name="low_max" inputmode="numeric" value="{{ rule_config.low_max }}" aria-label="Low upper limit"></td>
-              <td><input class="input num" name="low_green" inputmode="numeric" value="{{ rule_config.low_green }}" aria-label="Low green time in seconds"></td></tr>
-            <tr><td><span class="status status-medium"><span class="dot"></span>Medium</span></td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
+              <td><input class="input num" name="low_green_min" inputmode="numeric" value="{{ rule_config.low_green_min }}" aria-label="Low minimum green time in seconds"></td>
+              <td><input class="input num" name="low_green_max" inputmode="numeric" value="{{ rule_config.low_green_max }}" aria-label="Low maximum green time in seconds"></td>
+              <td class="preview num" data-preview="low"></td></tr>
+            <tr data-band="medium"><td><span class="status status-medium"><span class="dot"></span>Medium</span></td><td class="num" id="rule-medium-min">{{ rule_config.low_max + 1 }}</td>
               <td><input class="input num" name="medium_max" inputmode="numeric" value="{{ rule_config.medium_max }}" aria-label="Medium upper limit"></td>
-              <td><input class="input num" name="medium_green" inputmode="numeric" value="{{ rule_config.medium_green }}" aria-label="Medium green time in seconds"></td></tr>
-            <tr><td><span class="status status-high"><span class="dot"></span>High</span></td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
+              <td><input class="input num" name="medium_green_min" inputmode="numeric" value="{{ rule_config.medium_green_min }}" aria-label="Medium minimum green time in seconds"></td>
+              <td><input class="input num" name="medium_green_max" inputmode="numeric" value="{{ rule_config.medium_green_max }}" aria-label="Medium maximum green time in seconds"></td>
+              <td class="preview num" data-preview="medium"></td></tr>
+            <tr data-band="high"><td><span class="status status-high"><span class="dot"></span>High</span></td><td class="num" id="rule-high-min">{{ rule_config.medium_max + 1 }}</td>
               <td class="num">{{ max_count }}</td>
-              <td><input class="input num" name="high_green" inputmode="numeric" value="{{ rule_config.high_green }}" aria-label="High green time in seconds"></td></tr>
+              <td><input class="input num" name="high_green_min" inputmode="numeric" value="{{ rule_config.high_green_min }}" aria-label="High minimum green time in seconds"></td>
+              <td><input class="input num" name="high_green_max" inputmode="numeric" value="{{ rule_config.high_green_max }}" aria-label="High maximum green time in seconds"></td>
+              <td class="preview num" data-preview="high"></td></tr>
           </tbody>
         </table>
       </div>
       <div class="rules-form-foot">
+        <p class="rules-hint">Green time grows with the vehicle count inside each band, from the minimum (fewest vehicles) to the maximum (most). Make them equal for a fixed time.</p>
         <div id="rules-error" class="field-error" role="alert"></div>
         <div class="rules-actions">
           <button class="btn btn-ghost" type="button" id="rules-reset">Reset</button>
@@ -176,6 +183,7 @@
     window.TRAFFIC_RULES = {{ rules|tojson }};
     window.COUNT_RANGE = {min: {{ min_count }}, max: {{ max_count }}};
     window.GREEN_RANGE = {min: {{ green_min }}, max: {{ green_max }}};
+    window.COUNT_MAX = {{ max_count }};
   </script>
   <script src="{{ url_for('static', filename='common.js') }}"></script>
   <script src="{{ url_for('static', filename='junction.js') }}"></script>

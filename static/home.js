@@ -168,9 +168,11 @@
     el("result-density-wrap").className = `density-pill density-${rec.density_level.toLowerCase()}`;
     el("result-range").textContent = rule ? `(${rule.min} – ${rule.max} vehicles)` : "";
     el("result-green").textContent = `${rec.green_time_seconds} Seconds`;
+    const scaled = rule && rule.green_min !== rule.green_max
+      ? ` (scaled within ${rule.green_min}–${rule.green_max} s for ${rule.min}–${rule.max} vehicles)` : "";
     el("result-explanation").textContent =
       `${rec.vehicle_count} vehicles fall within the ${rec.density_level} density category, ` +
-      `so the system recommends ${rec.green_time_seconds} seconds.`;
+      `so the system recommends ${rec.green_time_seconds} seconds${scaled}.`;
     el("replay-tag").hidden = !isReplay;
     el("replay-text").textContent = isReplay ? `#${rec.traffic_id}` : "";
     highlightRule(rec.density_level);
@@ -307,19 +309,37 @@
   const rulesEditBtn = el("rules-edit-btn");
   const rulesError = el("rules-error");
   const field = (name) => rulesForm.elements[name];
-  const RULE_FIELDS = ["low_max", "medium_max", "low_green", "medium_green", "high_green"];
+  const RULE_FIELDS = ["low_max", "medium_max", "low_green_min", "low_green_max",
+    "medium_green_min", "medium_green_max", "high_green_min", "high_green_max"];
+
+  // Same formula as rules.green_for(): linear inside the band, rounded half up.
+  function greenFor(count, low, high, gMin, gMax) {
+    if (high === low || gMin === gMax) return gMin;
+    return Math.floor(gMin + ((count - low) / (high - low)) * (gMax - gMin) + 0.5);
+  }
 
   function fillForm(config) {
     RULE_FIELDS.forEach((k) => { field(k).value = config[k]; });
     updateRanges();
   }
 
-  // Keep the "From" column in step with the limits being typed.
+  // Keep the "From" column and the preview in step with what is being typed.
   function updateRanges() {
-    const low = parseInt(field("low_max").value, 10);
-    const med = parseInt(field("medium_max").value, 10);
+    const num = (k) => parseInt(field(k).value, 10);
+    const low = num("low_max");
+    const med = num("medium_max");
     el("rule-medium-min").textContent = Number.isFinite(low) ? low + 1 : "–";
     el("rule-high-min").textContent = Number.isFinite(med) ? med + 1 : "–";
+    const bands = { low: [0, low], medium: [low + 1, med], high: [med + 1, window.COUNT_MAX] };
+    for (const [name, [from, to]] of Object.entries(bands)) {
+      const cell = rulesForm.querySelector(`[data-preview="${name}"]`);
+      const gMin = num(`${name}_green_min`);
+      const gMax = num(`${name}_green_max`);
+      if (![from, to, gMin, gMax].every(Number.isFinite) || to < from || gMax < gMin) { cell.textContent = "–"; continue; }
+      const mid = Math.round((from + to) / 2);
+      const points = [...new Set([from, mid, to])];
+      cell.textContent = points.map((n) => `${n}\u2192${greenFor(n, from, to, gMin, gMax)}`).join(" · ") + " s";
+    }
   }
 
   function setEditing(on) {
@@ -341,7 +361,7 @@
       dot.className = "dot";
       dot.style.background = `var(--${r.density.toLowerCase()})`;
       const text = document.createElement("div");
-      text.innerHTML = `<b>${r.density} Density</b><span>(${r.min}–${r.max} vehicles)</span><br><span>→ ${r.green_time} seconds</span>`;
+      text.innerHTML = `<b>${r.density} Density</b><span>(${r.min}–${r.max} vehicles)</span><br><span>→ ${r.green_label} seconds</span>`;
       item.append(dot, text);
       return item;
     }), art);
@@ -367,9 +387,10 @@
       rulesError.textContent = err.message;
       // Point at the field the message is about, when we can tell.
       const msg = err.message.toLowerCase();
-      const guess = msg.includes("low upper") ? "low_max" : msg.includes("medium upper") ? "medium_max"
-        : msg.includes("low green") ? "low_green" : msg.includes("medium green") ? "medium_green"
-        : msg.includes("high green") ? "high_green" : null;
+      const level = msg.startsWith("low") ? "low" : msg.startsWith("medium") ? "medium" : msg.startsWith("high") ? "high" : null;
+      const guess = msg.includes("upper limit") ? `${level}_max`
+        : level && msg.includes("maximum green") ? `${level}_green_max`
+        : level && msg.includes("minimum green") ? `${level}_green_min` : null;
       RULE_FIELDS.forEach((k) => field(k).classList.toggle("invalid", k === guess));
     }
   }
@@ -385,7 +406,7 @@
   });
   el("rules-cancel").addEventListener("click", () => setEditing(false));
   el("rules-reset").addEventListener("click", () => {
-    if (confirm("Reset the rules to the defaults (0–10 Low 15 s, 11–25 Medium 30 s, 26–50 High 45 s)?")) {
+    if (confirm("Reset the rules to the defaults (0–10 Low 15 s, 11–25 Medium 30 s, 26–50 High 45 s, fixed)?")) {
       saveRules("DELETE");
     }
   });

@@ -71,10 +71,27 @@ def _migrate(cur, name):
             "ADD CONSTRAINT chk_green_time_range CHECK (green_time_seconds BETWEEN 5 AND 120)"
         )
 
+    # Green times became ranges: low_green -> low_green_min + low_green_max, etc.
+    cur.execute(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'rule_config'",
+        (name,),
+    )
+    columns = {row["COLUMN_NAME"] for row in cur.fetchall()}
+    for level in ("low", "medium", "high"):
+        if f"{level}_green" in columns and f"{level}_green_min" not in columns:
+            cur.execute(
+                f"ALTER TABLE rule_config RENAME COLUMN {level}_green TO {level}_green_min, "
+                f"ADD COLUMN {level}_green_max INT NULL AFTER {level}_green_min"
+            )
+            cur.execute(f"UPDATE rule_config SET {level}_green_max = {level}_green_min")
+            cur.execute(f"ALTER TABLE rule_config MODIFY {level}_green_max INT NOT NULL")
+
 
 # --- Rule settings ----------------------------------------------------------
 
-RULE_FIELDS = ("low_max", "medium_max", "low_green", "medium_green", "high_green")
+RULE_FIELDS = ("low_max", "medium_max", "low_green_min", "low_green_max",
+               "medium_green_min", "medium_green_max", "high_green_min", "high_green_max")
 
 
 def get_rule_config():
@@ -94,7 +111,8 @@ def save_rule_config(config):
     updates = ", ".join(f"{f} = new.{f}" for f in RULE_FIELDS)
     with get_db().cursor() as cur:
         cur.execute(
-            f"INSERT INTO rule_config (id, {', '.join(RULE_FIELDS)}) VALUES (1, %s, %s, %s, %s, %s) "
+            f"INSERT INTO rule_config (id, {', '.join(RULE_FIELDS)}) "
+            f"VALUES (1, {', '.join(['%s'] * len(RULE_FIELDS))}) "
             f"AS new ON DUPLICATE KEY UPDATE {updates}",
             values,
         )

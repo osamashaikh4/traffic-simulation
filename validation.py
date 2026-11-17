@@ -65,13 +65,27 @@ def _ranged(data, key, label, low, high):
 
 def parse_rule_config(data):
     """Validate rule settings. Bands must stay contiguous and cover 0..MAX_COUNT,
-    with at least one count in each band."""
+    with at least one count in each band. Each band has a green-time minimum and
+    maximum (maximum >= minimum); for a fixed time they are equal.
+
+    The older single-value form (e.g. "low_green": 15) is still accepted and
+    means minimum = maximum = 15.
+    """
     if not isinstance(data, dict):
         raise ValidationError("Request body must be JSON.")
     low_max = _ranged(data, "low_max", "Low upper limit", MIN_COUNT, MAX_COUNT - 2)
     medium_max = _ranged(data, "medium_max", "Medium upper limit", low_max + 1, MAX_COUNT - 1)
-    greens = {
-        key: _ranged(data, key, f"{level} green time", GREEN_MIN, GREEN_MAX)
-        for key, level in (("low_green", "Low"), ("medium_green", "Medium"), ("high_green", "High"))
-    }
-    return {"low_max": low_max, "medium_max": medium_max, **greens}
+    config = {"low_max": low_max, "medium_max": medium_max}
+    for key, level in (("low", "Low"), ("medium", "Medium"), ("high", "High")):
+        values = dict(data)
+        legacy = f"{key}_green"
+        if legacy in data and f"{key}_green_min" not in data and f"{key}_green_max" not in data:
+            values[f"{key}_green_min"] = values[f"{key}_green_max"] = data[legacy]
+        g_min = _ranged(values, f"{key}_green_min", f"{level} minimum green time", GREEN_MIN, GREEN_MAX)
+        g_max = _ranged(values, f"{key}_green_max", f"{level} maximum green time", GREEN_MIN, GREEN_MAX)
+        if g_max < g_min:
+            raise ValidationError(
+                f"{level} maximum green time must be at least the minimum ({g_min} seconds).")
+        config[f"{key}_green_min"] = g_min
+        config[f"{key}_green_max"] = g_max
+    return config

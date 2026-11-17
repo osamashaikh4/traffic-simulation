@@ -13,15 +13,19 @@ CREATE TABLE IF NOT EXISTS traffic_records (
     CONSTRAINT chk_green_time_range CHECK (green_time_seconds BETWEEN 5 AND 120)
 );
 
--- The active density/green-time rules (a single row, id = 1).
+-- The active density/green-time rules (a single row, id = 1). Each band has a
+-- green-time range, and the time scales with the count inside the band.
 -- When the row is missing the defaults in rules.py are used.
 CREATE TABLE IF NOT EXISTS rule_config (
     id           TINYINT PRIMARY KEY,
     low_max      INT NOT NULL,
     medium_max   INT NOT NULL,
-    low_green    INT NOT NULL,
-    medium_green INT NOT NULL,
-    high_green   INT NOT NULL,
+    low_green_min    INT NOT NULL,
+    low_green_max    INT NOT NULL,
+    medium_green_min INT NOT NULL,
+    medium_green_max INT NOT NULL,
+    high_green_min   INT NOT NULL,
+    high_green_max   INT NOT NULL,
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT chk_rule_single_row CHECK (id = 1),
     CONSTRAINT chk_rule_bands CHECK (low_max >= 0 AND medium_max > low_max AND medium_max < 50)
